@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="2GM Varme">
+<meta name="theme-color" content="#0a0f1e">
+<title>2GM Varme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00d4aa;
+    --accent2: #ff6b35;
+    --accent3: #4f8ef7;
+    --text: #e8edf5;
+    --muted: #5a6a80;
+    --warm: #ff8c42;
+    --cold: #4fc3f7;
+    --danger: #ff4757;
+    --success: #00d4aa;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,170,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,170,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 430px; margin: 0 auto; padding: 0 0 100px 0; }
+
+  /* Header */
+  .header {
+    padding: 56px 24px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .header-title {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .status-dot.online { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .status-dot.error { background: var(--danger); }
+
+  /* Main temp display */
+  .temp-hero {
+    padding: 0 24px 24px;
+    position: relative;
+  }
+  .temp-ring-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    height: 240px;
+  }
+  .temp-ring-svg {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 240px; height: 240px;
+  }
+  .temp-center {
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  .temp-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .temp-value {
+    font-family: var(--sans);
+    font-size: 72px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text);
+    transition: color 0.5s;
+  }
+  .temp-value .unit { font-size: 32px; font-weight: 400; color: var(--muted); }
+  .temp-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .temp-sub span { color: var(--accent); }
+
+  /* Info row */
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    padding: 0 24px 24px;
+  }
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .info-card-label {
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .info-card-value {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .info-card-value.warm { color: var(--warm); }
+  .info-card-value.cold { color: var(--cold); }
+  .info-card-sub { font-size: 9px; color: var(--muted); margin-top: 3px; }
+
+  /* Mode tabs */
+  .mode-tabs {
+    display: flex;
+    margin: 0 24px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    gap: 4px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mode-tab.active {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 500;
+  }
+
+  /* Panels */
+  .panel {
+    margin: 0 24px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+  }
+  .panel.active { display: block; }
+  .panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .panel-body { padding: 20px; }
+
+  /* Auto mode */
+  .auto-grid { display: grid; gap: 16px; }
+  .field-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .temp-picker {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .temp-picker button {
+    width: 44px; height: 44px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 20px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .temp-picker button:active { background: var(--border); }
+  .temp-picker .val {
+    flex: 1;
+    text-align: center;
+    font-family: var(--sans);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .time-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .time-input:focus { border-color: var(--accent); }
+
+  .schedule-list { display: grid; gap: 8px; margin-top: 4px; }
+  .schedule-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+  .schedule-item .time { color: var(--accent); font-weight: 500; }
+  .schedule-item .temp-tag {
+    background: rgba(0,212,170,0.1);
+    border: 1px solid rgba(0,212,170,0.2);
+    border-radius: 6px;
+    padding: 2px 8px;
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .schedule-item .del-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px;
+    transition: color 0.2s;
+  }
+  .schedule-item .del-btn:hover { color: var(--danger); }
+
+  /* Manual mode */
+  .manual-grid { display: grid; gap: 20px; }
+  .slider-wrap { }
+  .slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .slider-val {
+    font-family: var(--sans);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(0,212,170,0.4);
+  }
+
+  .fan-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .fan-btn {
+    padding: 10px 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+  }
+  .fan-btn.active {
+    background: rgba(0,212,170,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Power button */
+  .power-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 0 24px 20px;
+  }
+  .send-btn {
+    background: var(--accent);
+    border: none;
+    border-radius: 12px;
+    padding: 16px 24px;
+    color: var(--bg);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+  }
+  .send-btn:active { transform: scale(0.97); opacity: 0.85; }
+  .send-btn.loading { opacity: 0.6; pointer-events: none; }
+  .send-btn.danger { background: var(--danger); }
+
+  .power-btn {
+    width: 52px; height: 52px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .power-btn.on { border-color: var(--danger); color: var(--danger); background: rgba(255,71,87,0.08); }
+
+  /* Learning section */
+  .learn-panel {
+    margin: 0 24px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .learn-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .learn-title {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .learn-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid rgba(79,142,247,0.3);
+    color: var(--accent3);
+    background: rgba(79,142,247,0.08);
+  }
+  .learn-body { padding: 16px 20px; }
+  .learn-stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .learn-stat {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .learn-stat-label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .learn-stat-val { font-family: var(--sans); font-size: 16px; font-weight: 700; color: var(--text); }
+
+  /* Mini chart */
+  .mini-chart { height: 80px; position: relative; }
+  .mini-chart canvas { width: 100%; height: 100%; }
+
+  /* Log */
+  .log-section { margin: 0 24px 20px; }
+  .log-title {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    padding: 0 4px;
+  }
+  .log-list { display: grid; gap: 6px; }
+  .log-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .log-time { color: var(--accent); white-space: nowrap; min-width: 44px; }
+  .log-msg { flex: 1; line-height: 1.5; }
+  .log-ok { color: var(--success); }
+  .log-warn { color: var(--warm); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 12px;
+    color: var(--text);
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  .toast.ok { border-color: rgba(0,212,170,0.3); color: var(--accent); }
+  .toast.err { border-color: rgba(255,71,87,0.3); color: var(--danger); }
+
+  /* Bottom nav */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(10,15,30,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    z-index: 50;
+  }
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.2s;
+  }
+  .nav-btn.active { color: var(--accent); }
+  .nav-icon { font-size: 20px; line-height: 1; }
+
+  /* Prediction box */
+  .prediction-box {
+    margin: 0 24px 20px;
+    background: linear-gradient(135deg, rgba(0,212,170,0.08), rgba(79,142,247,0.05));
+    border: 1px solid rgba(0,212,170,0.2);
+    border-radius: 16px;
+    padding: 18px 20px;
+    display: none;
+  }
+  .prediction-box.visible { display: block; }
+  .pred-title {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .pred-content {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .pred-detail { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* Animations */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .pulsing { animation: pulse 2s infinite; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeIn 0.4s ease forwards; }
+
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="header-title">2GM Varme</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;" id="lastUpdate">Oppdaterer...</div>
+    </div>
+    <div class="header-status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">kobler til</span>
+    </div>
+  </div>
+
+  <!-- Temp ring -->
+  <div class="temp-hero">
+    <div class="temp-ring-wrap">
+      <svg class="temp-ring-svg" viewBox="0 0 240 240">
+        <circle cx="120" cy="120" r="100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="12"/>
+        <circle cx="120" cy="120" r="100" fill="none" stroke="var(--accent)" stroke-width="12"
+          stroke-linecap="round" stroke-dasharray="628" stroke-dashoffset="628"
+          transform="rotate(-90 120 120)" id="tempArc" style="transition: stroke-dashoffset 1s ease;"/>
+        <circle cx="120" cy="120" r="100" fill="none" stroke="rgba(255,107,53,0.3)" stroke-width="2"
+          stroke-dasharray="4 8" transform="rotate(-90 120 120)"/>
+      </svg>
+      <div class="temp-center">
+        <div class="temp-label">Rom nå</div>
+        <div class="temp-value" id="currentTemp">
+          <span class="spin">◌</span>
+        </div>
+        <div class="temp-sub">Mål: <span id="targetTempDisplay">—</span> &nbsp;|&nbsp; Ute: <span id="outerTempDisplay">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info cards -->
+  <div class="info-row">
+    <div class="info-card">
+      <div class="info-card-label">Fuktighet</div>
+      <div class="info-card-value" id="humidityVal">—</div>
+      <div class="info-card-sub">%</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-label">Vifte</div>
+      <div class="info-card-value" id="fanVal">—</div>
+      <div class="info-card-sub">hastighet</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-label">Modus</div>
+      <div class="info-card-value" id="modeVal">—</div>
+      <div class="info-card-sub" id="modeStatus">—</div>
+    </div>
+  </div>
+
+  <!-- Prediction box -->
+  <div class="prediction-box" id="predBox">
+    <div class="pred-title">⚡ AI-prediksjon</div>
+    <div class="pred-content" id="predContent">Beregner...</div>
+    <div class="pred-detail" id="predDetail"></div>
+  </div>
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="switchPanel('auto')">Auto</button>
+    <button class="mode-tab" onclick="switchPanel('manual')">Manuell</button>
+    <button class="mode-tab" onclick="switchPanel('boost')">Boost</button>
+  </div>
+
+  <!-- AUTO panel -->
+  <div class="panel active" id="panel-auto">
+    <div class="panel-header">Automatisk styring</div>
+    <div class="panel-body">
+      <div class="auto-grid">
+
+        <div>
+          <div class="field-label">Ønsket temperatur</div>
+          <div class="temp-picker">
+            <button onclick="adjustTemp('target', -0.5)">−</button>
+            <div class="val" id="targetTempPicker">22.0°</div>
+            <button onclick="adjustTemp('target', 0.5)">+</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div>
+            <div class="field-label">Klar innen</div>
+            <input type="time" class="time-input" id="targetTime" value="07:00">
+          </div>
+          <div>
+            <div class="field-label">Nattsenking</div>
+            <div class="temp-picker">
+              <button onclick="adjustTemp('night', -0.5)">−</button>
+              <div class="val" id="nightTempPicker">19.0°</div>
+              <button onclick="adjustTemp('night', 0.5)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="field-label">Planlagte tidspunkter</div>
+          <div class="schedule-list" id="scheduleList">
+            <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px;">Ingen tidspunkter lagt til</div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div>
+            <div class="field-label">Legg til tid</div>
+            <input type="time" class="time-input" id="newSchedTime" value="07:00">
+          </div>
+          <div>
+            <div class="field-label">Temp</div>
+            <div class="temp-picker">
+              <button onclick="adjustTemp('sched', -0.5)">−</button>
+              <div class="val" id="schedTempPicker">22.0°</div>
+              <button onclick="adjustTemp('sched', 0.5)">+</button>
+            </div>
+          </div>
+        </div>
+        <button class="send-btn" onclick="addSchedule()" style="width:100%;">+ Legg til tidspunkt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANUAL panel -->
+  <div class="panel" id="panel-manual">
+    <div class="panel-header">Manuell styring</div>
+    <div class="panel-body">
+      <div class="manual-grid">
+        <div class="slider-wrap">
+          <div class="slider-header">
+            <div class="field-label">Temperatur</div>
+            <div class="slider-val" id="manTempVal">22°C</div>
+          </div>
+          <input type="range" min="16" max="30" step="0.5" value="22" id="manTempSlider"
+            oninput="document.getElementById('manTempVal').textContent=this.value+'°C'">
+          <div style="display:flex;justify-content:space-between;margin-top:4px;">
+            <span style="font-size:9px;color:var(--muted)">16°</span>
+            <span style="font-size:9px;color:var(--muted)">30°</span>
+          </div>
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:10px;">Viftehastighet</div>
+          <div class="fan-grid">
+            <button class="fan-btn" onclick="selectFan(this,'auto')">Auto</button>
+            <button class="fan-btn" onclick="selectFan(this,'quiet')">Stille</button>
+            <button class="fan-btn active" onclick="selectFan(this,'low')">Lav</button>
+            <button class="fan-btn" onclick="selectFan(this,'medium')">Middels</button>
+            <button class="fan-btn" onclick="selectFan(this,'high')">Høy</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:10px;">Modus</div>
+          <div class="fan-grid" style="grid-template-columns:repeat(3,1fr);">
+            <button class="fan-btn active" onclick="selectMode(this,'heat')">♨️ Varme</button>
+            <button class="fan-btn" onclick="selectMode(this,'cool')">❄️ Kjøl</button>
+            <button class="fan-btn" onclick="selectMode(this,'fan')">🌀 Vifte</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOOST panel -->
+  <div class="panel" id="panel-boost">
+    <div class="panel-header">Boost — raskest mulig oppvarming</div>
+    <div class="panel-body">
+      <div class="auto-grid">
+        <div>
+          <div class="field-label">Måltemperatur for boost</div>
+          <div class="temp-picker">
+            <button onclick="adjustTemp('boost', -0.5)">−</button>
+            <div class="val" id="boostTempPicker">22.0°</div>
+            <button onclick="adjustTemp('boost', 0.5)">+</button>
+          </div>
+        </div>
+        <div style="background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:14px;">
+          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--warm);margin-bottom:8px;">Boost-strategi</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+            ✓ Setter pumpa på <strong style="color:var(--text)">30°C</strong><br>
+            ✓ Vifte på <strong style="color:var(--text)">Høy</strong><br>
+            ✓ Holder til ønsket temp nådd<br>
+            ✓ Logger resultatet for læring
+          </div>
+        </div>
+        <div id="boostStatus" style="display:none;background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);border-radius:10px;padding:14px;">
+          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:6px;">⚡ Boost aktiv</div>
+          <div style="font-size:12px;color:var(--muted);" id="boostStatusText">Varmer opp...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="power-row">
+    <button class="send-btn" id="mainActionBtn" onclick="mainAction()">Send kommando</button>
+    <button class="power-btn" id="powerBtn" onclick="togglePower()" title="Av/på">⏻</button>
+  </div>
+
+  <!-- Learning stats -->
+  <div class="learn-panel">
+    <div class="learn-header">
+      <div class="learn-title">Læringsmotor</div>
+      <div class="learn-badge" id="learnBadge">0 sesjoner</div>
+    </div>
+    <div class="learn-body">
+      <div class="learn-stat-row">
+        <div class="learn-stat">
+          <div class="learn-stat-label">Snitt oppvarming</div>
+          <div class="learn-stat-val" id="avgHeatTime">—</div>
+        </div>
+        <div class="learn-stat">
+          <div class="learn-stat-label">Beste prediksjon</div>
+          <div class="learn-stat-val" id="bestAccuracy">—</div>
+        </div>
+      </div>
+      <div class="field-label" style="margin-bottom:8px;">Siste 7 sesjoner (min/°C delta)</div>
+      <div class="mini-chart"><canvas id="historyChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="log-section">
+    <div class="log-title">Aktivitetslogg</div>
+    <div class="log-list" id="logList">
+      <div class="log-item"><span class="log-time">—</span><span class="log-msg">Starter opp...</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom nav -->
+<div class="bottom-nav">
+  <button class="nav-btn active" onclick="showSection('main')">
+    <span class="nav-icon">🌡</span>
+    <span>Oversikt</span>
+  </button>
+  <button class="nav-btn" onclick="showSection('schedule')">
+    <span class="nav-icon">⏰</span>
+    <span>Timeplan</span>
+  </button>
+  <button class="nav-btn" onclick="showSection('learn')">
+    <span class="nav-icon">🧠</span>
+    <span>Læring</span>
+  </button>
+  <button class="nav-btn" onclick="showSection('settings')">
+    <span class="nav-icon">⚙️</span>
+    <span>Innstil.</span>
+  </button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG — fylles inn i .env på server, brukes via API-kall
+// ============================================================
+const API_BASE = window.location.origin; // Peker mot Python-backend
+const REFRESH_SEC = 30;
+
+// ============================================================
+// STATE
+// ============================================================
+let state = {
+  currentTemp: null,
+  targetTemp: 22,
+  nightTemp: 19,
+  schedTemp: 22,
+  boostTemp: 22,
+  fanSpeed: 'low',
+  acMode: 'heat',
+  isPowered: false,
+  outerTemp: null,
+  humidity: null,
+  schedules: JSON.parse(localStorage.getItem('schedules') || '[]'),
+  history: JSON.parse(localStorage.getItem('heatHistory') || '[]'),
+  currentPanel: 'auto',
+  boostActive: false,
+  boostStartTemp: null,
+  boostStartTime: null,
+};
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  renderSchedules();
+  renderHistory();
+  fetchStatus();
+  setInterval(fetchStatus, REFRESH_SEC * 1000);
+  updatePickers();
+});
+
+// ============================================================
+// API CALLS
+// ============================================================
+async function fetchStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/status`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    updateUI(d);
+    setOnline(true);
+  } catch(e) {
+    setOnline(false);
+    addLog('Kan ikke nå server: ' + e.message, 'warn');
+  }
+}
+
+async function sendCommand(cmd) {
+  const btn = document.getElementById('mainActionBtn');
+  btn.classList.add('loading');
+  btn.textContent = 'Sender...';
+  try {
+    const res = await fetch(`${API_BASE}/api/command`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(cmd)
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast('Kommando sendt ✓', 'ok');
+      addLog(`Kommando: ${JSON.stringify(cmd)}`, 'ok');
+      setTimeout(fetchStatus, 2000);
+    } else {
+      showToast('Feil: ' + d.error, 'err');
+    }
+  } catch(e) {
+    showToast('Nettverksfeil', 'err');
+  } finally {
+    btn.classList.remove('loading');
+    updateActionBtn();
+  }
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI(d) {
+  // Temperaturer
+  if (d.temperature !== undefined) {
+    state.currentTemp = d.temperature;
+    const el = document.getElementById('currentTemp');
+    el.innerHTML = `${d.temperature.toFixed(1)}<span class="unit">°</span>`;
+    updateTempArc(d.temperature, 14, 30);
+  }
+  if (d.humidity !== undefined) {
+    document.getElementById('humidityVal').textContent = d.humidity.toFixed(0);
+    state.humidity = d.humidity;
+  }
+  if (d.outdoor_temp !== undefined) {
+    state.outerTemp = d.outdoor_temp;
+    document.getElementById('outerTempDisplay').textContent = d.outdoor_temp.toFixed(1) + '°';
+    const el = document.getElementById('outerTempDisplay');
+    el.style.color = d.outdoor_temp < 0 ? 'var(--cold)' : 'var(--warm)';
+  }
+
+  // AC state
+  if (d.ac) {
+    state.isPowered = d.ac.on;
+    state.targetTemp = d.ac.targetTemperature || state.targetTemp;
+    state.fanSpeed = d.ac.fanLevel || state.fanSpeed;
+    state.acMode = d.ac.mode || state.acMode;
+
+    document.getElementById('targetTempDisplay').textContent = state.targetTemp + '°';
+    document.getElementById('fanVal').textContent = fanLabel(state.fanSpeed);
+    document.getElementById('modeVal').textContent = modeLabel(state.acMode);
+    document.getElementById('modeStatus').textContent = state.isPowered ? 'På' : 'Av';
+
+    const powerBtn = document.getElementById('powerBtn');
+    powerBtn.classList.toggle('on', state.isPowered);
+  }
+
+  // Boost sjekk
+  if (state.boostActive && state.currentTemp >= state.boostTemp) {
+    endBoost();
+  }
+  if (state.boostActive) {
+    updateBoostStatus();
+  }
+
+  // Prediksjon
+  updatePrediction();
+
+  // Tidsstempel
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent =
+    'Sist oppdatert ' + now.toLocaleTimeString('no-NO', {hour:'2-digit',minute:'2-digit'});
+}
+
+function updateTempArc(val, min, max) {
+  const pct = Math.min(1, Math.max(0, (val - min) / (max - min)));
+  const circumference = 2 * Math.PI * 100;
+  const offset = circumference * (1 - pct);
+  document.getElementById('tempArc').style.strokeDashoffset = offset;
+
+  // Farge basert på temp
+  const arc = document.getElementById('tempArc');
+  if (val < 18) arc.style.stroke = 'var(--cold)';
+  else if (val > 24) arc.style.stroke = 'var(--warm)';
+  else arc.style.stroke = 'var(--accent)';
+}
+
+function setOnline(ok) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + (ok ? 'online' : 'error');
+  txt.textContent = ok ? 'tilkoblet' : 'frakoblet';
+}
+
+// ============================================================
+// PANELS
+// ============================================================
+function switchPanel(name) {
+  state.currentPanel = name;
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  event.target.classList.add('active');
+  updateActionBtn();
+}
+
+function updateActionBtn() {
+  const btn = document.getElementById('mainActionBtn');
+  if (state.currentPanel === 'auto') btn.textContent = 'Aktiver auto';
+  else if (state.currentPanel === 'manual') btn.textContent = 'Send manuell';
+  else if (state.currentPanel === 'boost') {
+    btn.textContent = state.boostActive ? 'Stopp boost' : '⚡ Start boost';
+    btn.className = state.boostActive ? 'send-btn danger' : 'send-btn';
+  }
+}
+
+// ============================================================
+// TEMP PICKERS
+// ============================================================
+function adjustTemp(type, delta) {
+  const keys = {target:'targetTemp', night:'nightTemp', sched:'schedTemp', boost:'boostTemp'};
+  const ids = {target:'targetTempPicker', night:'nightTempPicker', sched:'schedTempPicker', boost:'boostTempPicker'};
+  state[keys[type]] = Math.round((state[keys[type]] + delta) * 2) / 2;
+  state[keys[type]] = Math.max(14, Math.min(30, state[keys[type]]));
+  document.getElementById(ids[type]).textContent = state[keys[type]].toFixed(1) + '°';
+}
+
+function updatePickers() {
+  document.getElementById('targetTempPicker').textContent = state.targetTemp.toFixed(1) + '°';
+  document.getElementById('nightTempPicker').textContent = state.nightTemp.toFixed(1) + '°';
+  document.getElementById('schedTempPicker').textContent = state.schedTemp.toFixed(1) + '°';
+  document.getElementById('boostTempPicker').textContent = state.boostTemp.toFixed(1) + '°';
+}
+
+// ============================================================
+// FAN / MODE SELECT
+// ============================================================
+function selectFan(btn, speed) {
+  document.querySelectorAll('.fan-btn').forEach(b => {
+    if (b.parentElement === btn.parentElement) b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  state.fanSpeed = speed;
+}
+
+function selectMode(btn, mode) {
+  document.querySelectorAll('.fan-btn').forEach(b => {
+    if (b.parentElement === btn.parentElement) b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  state.acMode = mode;
+}
+
+function fanLabel(f) {
+  const m = {auto:'Auto',quiet:'Stille',low:'Lav',medium:'Middels',medium_high:'Mid-Høy',high:'Høy'};
+  return m[f] || f;
+}
+function modeLabel(m) {
+  const lbl = {heat:'Varme',cool:'Kjøl',fan:'Vifte',dry:'Tørk',auto:'Auto'};
+  return lbl[m] || m;
+}
+
+// ============================================================
+// MAIN ACTION
+// ============================================================
+function mainAction() {
+  if (state.currentPanel === 'auto') {
+    sendCommand({
+      type: 'auto',
+      targetTemp: state.targetTemp,
+      targetTime: document.getElementById('targetTime').value,
+      nightTemp: state.nightTemp,
+      schedules: state.schedules
+    });
+  } else if (state.currentPanel === 'manual') {
+    sendCommand({
+      type: 'manual',
+      on: true,
+      mode: state.acMode,
+      targetTemperature: parseFloat(document.getElementById('manTempSlider').value),
+      fanLevel: state.fanSpeed
+    });
+  } else if (state.currentPanel === 'boost') {
+    if (state.boostActive) stopBoost();
+    else startBoost();
+  }
+}
+
+function togglePower() {
+  sendCommand({ type: 'power', on: !state.isPowered });
+}
+
+// ============================================================
+// BOOST
+// ============================================================
+function startBoost() {
+  state.boostActive = true;
+  state.boostStartTemp = state.currentTemp;
+  state.boostStartTime = Date.now();
+  sendCommand({
+    type: 'manual',
+    on: true,
+    mode: 'heat',
+    targetTemperature: 30,
+    fanLevel: 'high'
+  });
+  document.getElementById('boostStatus').style.display = 'block';
+  addLog(`Boost startet. Mål: ${state.boostTemp}°, Fra: ${state.currentTemp}°`, 'ok');
+  updateActionBtn();
+}
+
+function stopBoost() {
+  state.boostActive = false;
+  document.getElementById('boostStatus').style.display = 'none';
+  sendCommand({
+    type: 'manual',
+    on: true,
+    mode: 'heat',
+    targetTemperature: state.boostTemp,
+    fanLevel: 'medium_high'
+  });
+  addLog('Boost stoppet manuelt', 'warn');
+  updateActionBtn();
+}
+
+function endBoost() {
+  const elapsed = (Date.now() - state.boostStartTime) / 60000;
+  const delta = state.boostTemp - state.boostStartTemp;
+  const entry = {
+    ts: Date.now(),
+    fromTemp: state.boostStartTemp,
+    toTemp: state.boostTemp,
+    outerTemp: state.outerTemp,
+    minPerDeg: elapsed / Math.max(0.1, delta),
+    totalMin: elapsed.toFixed(1)
+  };
+  state.history.push(entry);
+  if (state.history.length > 50) state.history.shift();
+  localStorage.setItem('heatHistory', JSON.stringify(state.history));
+
+  state.boostActive = false;
+  document.getElementById('boostStatus').style.display = 'none';
+  sendCommand({
+    type: 'manual', on: true, mode: 'heat',
+    targetTemperature: state.boostTemp, fanLevel: 'medium_high'
+  });
+  addLog(`Boost ferdig! ${elapsed.toFixed(0)} min for ${delta.toFixed(1)}°C`, 'ok');
+  renderHistory();
+  updateActionBtn();
+}
+
+function updateBoostStatus() {
+  const elapsed = ((Date.now() - state.boostStartTime) / 60000).toFixed(0);
+  const remaining = Math.max(0, state.boostTemp - (state.currentTemp || 0));
+  document.getElementById('boostStatusText').textContent =
+    `${elapsed} min brukt · ${remaining.toFixed(1)}°C igjen til mål`;
+}
+
+// ============================================================
+// SCHEDULE
+// ============================================================
+function addSchedule() {
+  const time = document.getElementById('newSchedTime').value;
+  if (!time) return;
+  state.schedules.push({ time, temp: state.schedTemp });
+  state.schedules.sort((a, b) => a.time.localeCompare(b.time));
+  localStorage.setItem('schedules', JSON.stringify(state.schedules));
+  renderSchedules();
+  showToast('Tidspunkt lagt til', 'ok');
+}
+
+function removeSchedule(i) {
+  state.schedules.splice(i, 1);
+  localStorage.setItem('schedules', JSON.stringify(state.schedules));
+  renderSchedules();
+}
+
+function renderSchedules() {
+  const list = document.getElementById('scheduleList');
+  if (!state.schedules.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px;">Ingen tidspunkter lagt til</div>';
+    return;
+  }
+  list.innerHTML = state.schedules.map((s, i) => `
+    <div class="schedule-item">
+      <span class="time">${s.time}</span>
+      <span class="temp-tag">${s.temp.toFixed(1)}°</span>
+      <button class="del-btn" onclick="removeSchedule(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// HISTORY / LEARNING
+// ============================================================
+function renderHistory() {
+  const h = state.history;
+  const badge = document.getElementById('learnBadge');
+  badge.textContent = h.length + ' sesjoner';
+
+  if (!h.length) return;
+
+  // Snitt
+  const avgMin = h.reduce((a, b) => a + parseFloat(b.totalMin), 0) / h.length;
+  document.getElementById('avgHeatTime').textContent = avgMin.toFixed(0) + ' min';
+
+  // Beste nøyaktighet (laveste avvik)
+  document.getElementById('bestAccuracy').textContent =
+    (h[h.length - 1].minPerDeg * 60).toFixed(0) + ' sek/°';
+
+  // Mini-chart
+  drawMiniChart(h.slice(-7).map(x => parseFloat(x.minPerDeg)));
+}
+
+function drawMiniChart(vals) {
+  const canvas = document.getElementById('historyChart');
+  if (!canvas || !vals.length) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * 2;
+  canvas.height = canvas.offsetHeight * 2;
+  ctx.scale(2, 2);
+  const W = canvas.offsetWidth / 2;
+  const H = canvas.offsetHeight / 2;
+  const max = Math.max(...vals) * 1.1;
+  const min = Math.min(...vals) * 0.9;
+  const pad = 10;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = pad + (H - 2 * pad) * i / 3;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+  }
+
+  // Line
+  const step = (W - 2 * pad) / Math.max(vals.length - 1, 1);
+  ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = pad + i * step;
+    const y = H - pad - (H - 2 * pad) * (v - min) / Math.max(max - min, 0.1);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = 'rgba(0,212,170,0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Dots
+  vals.forEach((v, i) => {
+    const x = pad + i * step;
+    const y = H - pad - (H - 2 * pad) * (v - min) / Math.max(max - min, 0.1);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'var(--accent)';
+    ctx.fill();
+  });
+}
+
+// ============================================================
+// PREDICTION
+// ============================================================
+function updatePrediction() {
+  if (!state.currentTemp || !state.history.length) {
+    document.getElementById('predBox').classList.remove('visible');
+    return;
+  }
+  const delta = state.targetTemp - state.currentTemp;
+  if (delta <= 0.5) {
+    document.getElementById('predBox').classList.remove('visible');
+    return;
+  }
+
+  // Finn relevante historiske punkter basert på utetemperatur
+  const outerBin = Math.round((state.outerTemp || 0) / 5) * 5;
+  const relevant = state.history.filter(h =>
+    state.outerTemp === null || Math.abs(h.outerTemp - outerBin) <= 7
+  );
+
+  const avgMinPerDeg = relevant.length
+    ? relevant.reduce((a, b) => a + b.minPerDeg, 0) / relevant.length
+    : 8; // Default: 8 min per grad
+
+  const estMin = Math.round(delta * avgMinPerDeg);
+  const startTime = new Date(Date.now() + (/* target offset */ 0));
+
+  document.getElementById('predContent').textContent =
+    `Estimert ${estMin} min for +${delta.toFixed(1)}°C`;
+  document.getElementById('predDetail').textContent =
+    `Basert på ${relevant.length || 0} lignende sesjoner · ${avgMinPerDeg.toFixed(1)} min/°C`;
+  document.getElementById('predBox').classList.add('visible');
+}
+
+// ============================================================
+// LOG
+// ============================================================
+function addLog(msg, type) {
+  const list = document.getElementById('logList');
+  const now = new Date().toLocaleTimeString('no-NO', {hour:'2-digit',minute:'2-digit'});
+  const cls = type === 'ok' ? 'log-ok' : type === 'warn' ? 'log-warn' : '';
+  const item = document.createElement('div');
+  item.className = 'log-item fade-in';
+  item.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${cls}">${msg}</span>`;
+  list.insertBefore(item, list.firstChild);
+  while (list.children.length > 12) list.removeChild(list.lastChild);
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+// ============================================================
+// NAV (placeholder)
+// ============================================================
+function showSection(s) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  event.target.closest('.nav-btn').classList.add('active');
+  // Enkel navigasjon — full implementasjon i neste versjon
+  if (s !== 'main') showToast('Kommer snart: ' + s);
+}
+</script>
+</body>
+</html>
