@@ -241,6 +241,25 @@ def check_boost_complete():
                 cache["ac"].update(payload)
                 log.info(f"Boost ferdig! {elapsed:.0f} min for {delta:.1f}°C → {target}°C, {normal_fan} vifte")
 
+def log_auto_heat_session(current):
+    """Logger en auto-oppvarming (30 °C + høy vifte) til læringshistorikken når den er ferdig."""
+    start = cache.pop("auto_heat_start", None)
+    if not start:
+        return
+    delta = current - start["temp"]
+    elapsed = (time.time() - start["time"]) / 60
+    if delta < 0.5 or elapsed < 1:
+        return  # for lite til å si noe om oppvarmingstid
+    log_heat_session({
+        "timestamp": datetime.now().isoformat(),
+        "from_temp": start["temp"],
+        "to_temp": current,
+        "outdoor_temp": start.get("outdoor"),
+        "elapsed_min": round(elapsed, 1),
+        "min_per_deg": round(elapsed / delta, 2),
+        "fan_speed": "high"
+    })
+
 def auto_feedback_check():
     """
     To tilstander:
@@ -278,8 +297,10 @@ def auto_feedback_check():
         result = sensibo_patch(uid, payload)
         if result:
             cache["ac"].update(payload)
+            cache["auto_heat_start"] = {"temp": current, "time": time.time(), "outdoor": cache.get("outdoor_temp")}
             log.info(f"Auto OPPVARMING: {current:.1f}°C → mål {target}°C (hysteresis {hysteresis}°C) | 30°C + høy vifte")
     else:
+        log_auto_heat_session(current)
         # HOLDE — normalinnstilling
         wanted_temp = target
         wanted_fan = NORMAL_FAN
@@ -373,8 +394,16 @@ def log_heat_session(entry: dict):
 def load_history():
     if not os.path.exists(LOG_FILE):
         return []
+    rows = []
     with open(LOG_FILE, encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+        for r in csv.DictReader(f):
+            # Kun ekte oppvarminger (temp opp) gir mening i læringen
+            try:
+                if float(r["to_temp"]) > float(r["from_temp"]) and float(r["elapsed_min"]) > 0:
+                    rows.append(r)
+            except (KeyError, TypeError, ValueError):
+                continue
+    return rows
 
 # ============================================================
 # PERSISTENT STATE
@@ -428,7 +457,7 @@ def predict_heatup(target_temp, outdoor_temp):
     # Filtrer på lignende utetemperatur (±7 grader)
     relevant = [
         h for h in history
-        if outdoor_temp is not None and h.get("outdoor_temp") is not None
+        if outdoor_temp is not None and h.get("outdoor_temp") not in (None, "")
         and abs(float(h["outdoor_temp"]) - outdoor_temp) <= 7
     ] if outdoor_temp else history
 

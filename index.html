@@ -616,7 +616,11 @@ function applyStatus(d) {
     settings.normalFan = d.normal_fan;
       }
   if (d.history != null) {
-    S.history = d.history;
+    // Serveren lagrer CSV-navn (elapsed_min, min_per_deg …) — appen bruker camelCase
+    S.history = d.history.map(r => ({
+      ts: r.timestamp, fromTemp: r.from_temp, toTemp: r.to_temp, outerTemp: r.outdoor_temp || null,
+      totalMin: r.elapsed_min, minPerDeg: r.min_per_deg
+    }));
     renderHistory();
   }
   if (d.boost_temp != null && d.boost_temp !== S.boostTemp) {
@@ -925,11 +929,15 @@ function removeSchedule(i) {
 function renderHistory() {
   const h = S.history;
   document.getElementById("learnBadge").textContent = h.length+" sesjoner";
-  if (!h.length) return;
+  if (!h.length) {
+    document.getElementById("avgHeat").textContent = "—";
+    document.getElementById("lastSess").textContent = "—";
+    return;
+  }
   const avg = h.reduce((a,b)=>a+parseFloat(b.totalMin),0)/h.length;
   document.getElementById("avgHeat").textContent = avg.toFixed(0)+" min";
   const last = h[h.length-1];
-  document.getElementById("lastSess").textContent = (parseFloat(last.minPerDeg)*60).toFixed(0)+" sek/°";
+  document.getElementById("lastSess").textContent = parseFloat(last.minPerDeg).toFixed(0)+" min/°";
   drawChart(h.slice(-7).map(x=>parseFloat(x.minPerDeg)));
 }
 
