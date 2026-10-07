@@ -1,0 +1,7 @@
+.env
+server.log*
+state.json
+heat_history.csv
+nohup.out
+*.bak-*
+__pycache__/

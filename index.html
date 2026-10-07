@@ -5,557 +5,167 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="2GM Varme">
+<meta name="apple-mobile-web-app-title" content="Varme">
 <meta name="theme-color" content="#0a0f1e">
-<title>2GM Varme</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<title>Varme</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0f1e;
-    --surface: #111827;
-    --surface2: #1a2236;
-    --border: rgba(255,255,255,0.07);
-    --accent: #00d4aa;
-    --accent2: #ff6b35;
-    --accent3: #4f8ef7;
-    --text: #e8edf5;
-    --muted: #5a6a80;
-    --warm: #ff8c42;
-    --cold: #4fc3f7;
-    --danger: #ff4757;
-    --success: #00d4aa;
-    --mono: 'DM Mono', monospace;
-    --sans: 'Syne', sans-serif;
-  }
+:root {
+  --bg:#0a0f1e; --surface:#111827; --surface2:#1a2236;
+  --border:rgba(255,255,255,0.07); --accent:#00d4aa; --accent3:#4f8ef7;
+  --text:#e8edf5; --muted:#5a6a80; --warm:#ff8c42; --cold:#4fc3f7;
+  --danger:#ff4757; --mono:'DM Mono',monospace; --sans:'Syne',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,170,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+.app{position:relative;z-index:1;max-width:430px;margin:0 auto;padding:0 0 100px}
 
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* Header */
+.header{padding:56px 24px 20px;display:flex;justify-content:space-between;align-items:flex-start}
+.header-title{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background 0.3s;display:inline-block;margin-right:6px}
+.status-dot.online{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.status-dot.error{background:var(--danger)}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--mono);
-    min-height: 100vh;
-    overflow-x: hidden;
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+/* Temp ring */
+.temp-ring-wrap{display:flex;justify-content:center;align-items:center;position:relative;height:220px}
+.temp-ring-svg{position:absolute;top:0;left:50%;transform:translateX(-50%);width:220px;height:220px}
+.temp-center{text-align:center;position:relative;z-index:2}
+.temp-label{font-size:10px;letter-spacing:0.2em;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.temp-value{font-family:var(--sans);font-size:48px;font-weight:800;line-height:1;color:var(--text);transition:color 0.5s}
+.temp-value .unit{font-size:22px;font-weight:400;color:var(--muted)}
+.temp-sub{font-size:11px;color:var(--muted);margin-top:6px}
 
-  /* Background grid */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,212,170,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,170,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-  }
+/* Info cards */
+.info-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 24px 20px}
+.info-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center}
+.info-card-label{font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.info-card-value{font-family:var(--sans);font-size:18px;font-weight:700;color:var(--text)}
+.info-card-sub{font-size:9px;color:var(--muted);margin-top:3px}
 
-  .app { position: relative; z-index: 1; max-width: 430px; margin: 0 auto; padding: 0 0 100px 0; }
+/* Auto toggle */
+.auto-toggle{margin:0 24px 20px;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s}
+.auto-toggle.on{background:rgba(0,212,170,0.08);border-color:rgba(0,212,170,0.35)}
+.auto-toggle-title{font-family:var(--sans);font-size:13px;font-weight:700;color:var(--muted);transition:color 0.2s}
+.auto-toggle.on .auto-toggle-title{color:var(--accent)}
+.auto-toggle-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.toggle-pill{width:48px;height:26px;border-radius:13px;background:var(--surface2);border:1px solid var(--border);position:relative;flex-shrink:0;transition:background 0.25s}
+.toggle-pill.on{background:var(--accent);border-color:var(--accent)}
+.toggle-knob{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:left 0.25s,background 0.25s}
+.toggle-pill.on .toggle-knob{left:24px;background:var(--bg)}
 
-  /* Header */
-  .header {
-    padding: 56px 24px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-  }
-  .header-title {
-    font-family: var(--sans);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .header-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: var(--muted);
-  }
-  .status-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: background 0.3s;
-  }
-  .status-dot.online { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-  .status-dot.error { background: var(--danger); }
+/* Mode tabs */
+.mode-tabs{display:flex;margin:0 24px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;gap:4px}
+.mode-tab{flex:1;padding:10px;border:none;border-radius:9px;background:transparent;color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:all 0.2s}
+.mode-tab.active{background:var(--accent);color:var(--bg);font-weight:500}
 
-  /* Main temp display */
-  .temp-hero {
-    padding: 0 24px 24px;
-    position: relative;
-  }
-  .temp-ring-wrap {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    height: 240px;
-  }
-  .temp-ring-svg {
-    position: absolute;
-    top: 0; left: 50%;
-    transform: translateX(-50%);
-    width: 240px; height: 240px;
-  }
-  .temp-center {
-    text-align: center;
-    position: relative;
-    z-index: 2;
-  }
-  .temp-label {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  .temp-value {
-    font-family: var(--sans);
-    font-size: 72px;
-    font-weight: 800;
-    line-height: 1;
-    color: var(--text);
-    transition: color 0.5s;
-  }
-  .temp-value .unit { font-size: 32px; font-weight: 400; color: var(--muted); }
-  .temp-sub {
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 6px;
-  }
-  .temp-sub span { color: var(--accent); }
+/* Panel */
+.panel{margin:0 24px 20px;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;display:none}
+.panel.active{display:block}
+.panel-header{padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
+.panel-body{padding:18px;display:grid;gap:16px}
 
-  /* Info row */
-  .info-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
-    padding: 0 24px 24px;
-  }
-  .info-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 12px;
-    text-align: center;
-  }
-  .info-card-label {
-    font-size: 9px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 6px;
-  }
-  .info-card-value {
-    font-family: var(--sans);
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-  }
-  .info-card-value.warm { color: var(--warm); }
-  .info-card-value.cold { color: var(--cold); }
-  .info-card-sub { font-size: 9px; color: var(--muted); margin-top: 3px; }
+/* Temp picker */
+.field-label{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.temp-picker{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.temp-picker button{width:44px;height:44px;border:none;background:transparent;color:var(--text);font-size:20px;cursor:pointer;transition:background 0.15s}
+.temp-picker button:active{background:var(--border)}
+.temp-picker .val{flex:1;text-align:center;font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent)}
 
-  /* Mode tabs */
-  .mode-tabs {
-    display: flex;
-    margin: 0 24px 20px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 4px;
-    gap: 4px;
-  }
-  .mode-tab {
-    flex: 1;
-    padding: 10px;
-    border: none;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .mode-tab.active {
-    background: var(--accent);
-    color: var(--bg);
-    font-weight: 500;
-  }
+/* Info box */
+.info-box{background:rgba(0,212,170,0.04);border:1px solid rgba(0,212,170,0.12);border-radius:10px;padding:14px}
+.info-box-title{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.info-box-content{font-size:11px;color:var(--muted);line-height:1.8}
 
-  /* Panels */
-  .panel {
-    margin: 0 24px 20px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    overflow: hidden;
-    display: none;
-  }
-  .panel.active { display: block; }
-  .panel-header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .panel-body { padding: 20px; }
+/* Schedule */
+.schedule-list{display:grid;gap:6px}
+.schedule-item{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.schedule-item-left{}
+.schedule-item-top{display:flex;align-items:center;gap:8px}
+.schedule-time{color:var(--accent);font-weight:500;font-size:13px}
+.schedule-temp{background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.2);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px}
+.schedule-days{font-size:10px;color:var(--muted);margin-top:3px}
+.del-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px;transition:color 0.2s}
+.del-btn:hover{color:var(--danger)}
 
-  /* Auto mode */
-  .auto-grid { display: grid; gap: 16px; }
-  .field-label {
-    font-size: 10px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
-  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Add schedule box */
+.add-box{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;display:grid;gap:12px}
+.add-box-title{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.time-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none;transition:border-color 0.2s}
+.time-input:focus{border-color:var(--accent)}
 
-  .temp-picker {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .temp-picker button {
-    width: 44px; height: 44px;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font-size: 20px;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-  .temp-picker button:active { background: var(--border); }
-  .temp-picker .val {
-    flex: 1;
-    text-align: center;
-    font-family: var(--sans);
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--accent);
-  }
+/* Day selector */
+.day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.day-btn{padding:6px 2px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:9px;cursor:pointer;text-align:center;transition:all 0.15s}
+.day-btn.active{background:rgba(0,212,170,0.12);border-color:var(--accent);color:var(--accent)}
 
-  .time-input {
-    width: 100%;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 16px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .time-input:focus { border-color: var(--accent); }
+/* Slider */
+.slider-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.slider-val{font-family:var(--sans);font-size:20px;font-weight:700;color:var(--accent)}
+input[type=range]{-webkit-appearance:none;width:100%;height:4px;background:var(--surface2);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 12px rgba(0,212,170,0.4)}
+.slider-minmax{display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--muted)}
 
-  .schedule-list { display: grid; gap: 8px; margin-top: 4px; }
-  .schedule-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
-    font-size: 12px;
-  }
-  .schedule-item .time { color: var(--accent); font-weight: 500; }
-  .schedule-item .temp-tag {
-    background: rgba(0,212,170,0.1);
-    border: 1px solid rgba(0,212,170,0.2);
-    border-radius: 6px;
-    padding: 2px 8px;
-    color: var(--accent);
-    font-size: 11px;
-  }
-  .schedule-item .del-btn {
-    background: transparent;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 14px;
-    padding: 4px;
-    transition: color 0.2s;
-  }
-  .schedule-item .del-btn:hover { color: var(--danger); }
+/* Fan grid */
+.fan-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.fan-btn{padding:10px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:0.05em;text-transform:uppercase;cursor:pointer;text-align:center;transition:all 0.15s}
+.fan-btn.active{background:rgba(0,212,170,0.12);border-color:var(--accent);color:var(--accent)}
 
-  /* Manual mode */
-  .manual-grid { display: grid; gap: 20px; }
-  .slider-wrap { }
-  .slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .slider-val {
-    font-family: var(--sans);
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--accent);
-  }
+/* Heat lock */
+.heat-lock{display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid rgba(0,212,170,0.25);border-radius:10px;padding:12px 16px}
 
-  input[type=range] {
-    -webkit-appearance: none;
-    width: 100%;
-    height: 4px;
-    background: var(--surface2);
-    border-radius: 2px;
-    outline: none;
-  }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 24px; height: 24px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    box-shadow: 0 0 12px rgba(0,212,170,0.4);
-  }
+/* Boost */
+.boost-box{background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:14px}
+.boost-box-title{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--warm);margin-bottom:8px}
+.boost-active-box{background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);border-radius:10px;padding:14px;display:none}
+.boost-active-box.show{display:block}
 
-  .fan-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-  }
-  .fan-btn {
-    padding: 10px 4px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface2);
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s;
-  }
-  .fan-btn.active {
-    background: rgba(0,212,170,0.12);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
+/* Action row */
+.action-row{padding:0 24px 20px;display:grid;gap:12px}
+.action-row.with-power{grid-template-columns:1fr auto}
+.send-btn{background:var(--accent);border:none;border-radius:12px;padding:16px 24px;color:var(--bg);font-family:var(--sans);font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:all 0.2s}
+.send-btn:active{transform:scale(0.97);opacity:0.85}
+.send-btn.danger{background:var(--danger)}
+.power-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+.power-btn.on{border-color:var(--danger);color:var(--danger);background:rgba(255,71,87,0.08)}
 
-  /* Power button */
-  .power-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 12px;
-    align-items: center;
-    padding: 0 24px 20px;
-  }
-  .send-btn {
-    background: var(--accent);
-    border: none;
-    border-radius: 12px;
-    padding: 16px 24px;
-    color: var(--bg);
-    font-family: var(--sans);
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.2s;
-    flex: 1;
-  }
-  .send-btn:active { transform: scale(0.97); opacity: 0.85; }
-  .send-btn.loading { opacity: 0.6; pointer-events: none; }
-  .send-btn.danger { background: var(--danger); }
+/* Learning */
+.learn-panel{margin:0 24px 20px;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.learn-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.learn-title{font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
+.learn-badge{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid rgba(79,142,247,0.3);color:var(--accent3);background:rgba(79,142,247,0.08)}
+.learn-body{padding:16px 18px}
+.learn-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.learn-stat{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px}
+.learn-stat-label{font-size:9px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px}
+.learn-stat-val{font-family:var(--sans);font-size:18px;font-weight:700;color:var(--text)}
 
-  .power-btn {
-    width: 52px; height: 52px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--muted);
-    font-size: 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-  .power-btn.on { border-color: var(--danger); color: var(--danger); background: rgba(255,71,87,0.08); }
+/* Log */
+.log-section{padding:0 24px}
+.log-title{font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-left:4px}
+.log-list{display:grid;gap:6px}
+.log-item{display:flex;gap:10px;align-items:flex-start;font-size:11px;color:var(--muted);padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.log-time{color:var(--accent);white-space:nowrap;min-width:44px}
+.log-ok{color:var(--accent)}
+.log-warn{color:var(--warm)}
 
-  /* Learning section */
-  .learn-panel {
-    margin: 0 24px 20px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    overflow: hidden;
-  }
-  .learn-header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .learn-title {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .learn-badge {
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 20px;
-    border: 1px solid rgba(79,142,247,0.3);
-    color: var(--accent3);
-    background: rgba(79,142,247,0.08);
-  }
-  .learn-body { padding: 16px 20px; }
-  .learn-stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-  .learn-stat {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
-  }
-  .learn-stat-label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
-  .learn-stat-val { font-family: var(--sans); font-size: 16px; font-weight: 700; color: var(--text); }
+/* Toast */
+.toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--text);z-index:100;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+.toast.ok{border-color:rgba(0,212,170,0.3);color:var(--accent)}
+.toast.err{border-color:rgba(255,71,87,0.3);color:var(--danger)}
 
-  /* Mini chart */
-  .mini-chart { height: 80px; position: relative; }
-  .mini-chart canvas { width: 100%; height: 100%; }
+/* Bottom nav */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,15,30,0.95);backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;padding:12px 0 calc(12px + env(safe-area-inset-bottom));z-index:50}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;border:none;background:transparent;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;padding:4px 0;transition:color 0.2s}
+.nav-btn.active{color:var(--accent)}
+.nav-icon{font-size:20px;line-height:1}
 
-  /* Log */
-  .log-section { margin: 0 24px 20px; }
-  .log-title {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 12px;
-    padding: 0 4px;
-  }
-  .log-list { display: grid; gap: 6px; }
-  .log-item {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    font-size: 11px;
-    color: var(--muted);
-    padding: 8px 12px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-  .log-time { color: var(--accent); white-space: nowrap; min-width: 44px; }
-  .log-msg { flex: 1; line-height: 1.5; }
-  .log-ok { color: var(--success); }
-  .log-warn { color: var(--warm); }
-
-  /* Toast */
-  .toast {
-    position: fixed;
-    bottom: calc(80px + env(safe-area-inset-bottom));
-    left: 50%; transform: translateX(-50%);
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 20px;
-    font-size: 12px;
-    color: var(--text);
-    z-index: 100;
-    opacity: 0;
-    transition: opacity 0.3s;
-    pointer-events: none;
-    white-space: nowrap;
-  }
-  .toast.show { opacity: 1; }
-  .toast.ok { border-color: rgba(0,212,170,0.3); color: var(--accent); }
-  .toast.err { border-color: rgba(255,71,87,0.3); color: var(--danger); }
-
-  /* Bottom nav */
-  .bottom-nav {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    background: rgba(10,15,30,0.95);
-    backdrop-filter: blur(20px);
-    border-top: 1px solid var(--border);
-    display: flex;
-    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
-    z-index: 50;
-  }
-  .nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    padding: 4px 0;
-    transition: color 0.2s;
-  }
-  .nav-btn.active { color: var(--accent); }
-  .nav-icon { font-size: 20px; line-height: 1; }
-
-  /* Prediction box */
-  .prediction-box {
-    margin: 0 24px 20px;
-    background: linear-gradient(135deg, rgba(0,212,170,0.08), rgba(79,142,247,0.05));
-    border: 1px solid rgba(0,212,170,0.2);
-    border-radius: 16px;
-    padding: 18px 20px;
-    display: none;
-  }
-  .prediction-box.visible { display: block; }
-  .pred-title {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 10px;
-  }
-  .pred-content {
-    font-family: var(--sans);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text);
-    line-height: 1.6;
-  }
-  .pred-detail { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
-
-  /* Animations */
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  .pulsing { animation: pulse 2s infinite; }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .fade-in { animation: fadeIn 0.4s ease forwards; }
-
-  .spin { animation: spin 1s linear infinite; display: inline-block; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn 0.3s ease forwards}
+input[type=time]{color-scheme:dark}
 </style>
 </head>
 <body>
@@ -564,32 +174,28 @@
   <!-- Header -->
   <div class="header">
     <div>
-      <div class="header-title">2GM Varme</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;" id="lastUpdate">Oppdaterer...</div>
+      <div class="header-title">Varme</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px" id="lastUpdate">Oppdaterer...</div>
     </div>
-    <div class="header-status">
-      <div class="status-dot" id="statusDot"></div>
+    <div style="display:flex;align-items:center;font-size:11px;color:var(--muted)">
+      <span class="status-dot" id="statusDot"></span>
       <span id="statusText">kobler til</span>
     </div>
   </div>
 
   <!-- Temp ring -->
-  <div class="temp-hero">
+  <div style="padding:0 24px 20px">
     <div class="temp-ring-wrap">
-      <svg class="temp-ring-svg" viewBox="0 0 240 240">
-        <circle cx="120" cy="120" r="100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="12"/>
-        <circle cx="120" cy="120" r="100" fill="none" stroke="var(--accent)" stroke-width="12"
+      <svg class="temp-ring-svg" viewBox="0 0 220 220">
+        <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="10"/>
+        <circle cx="110" cy="110" r="100" fill="none" stroke="var(--accent)" stroke-width="10"
           stroke-linecap="round" stroke-dasharray="628" stroke-dashoffset="628"
-          transform="rotate(-90 120 120)" id="tempArc" style="transition: stroke-dashoffset 1s ease;"/>
-        <circle cx="120" cy="120" r="100" fill="none" stroke="rgba(255,107,53,0.3)" stroke-width="2"
-          stroke-dasharray="4 8" transform="rotate(-90 120 120)"/>
+          transform="rotate(-90 110 110)" id="tempArc" style="transition:stroke-dashoffset 1s ease,stroke 0.5s"/>
       </svg>
       <div class="temp-center">
         <div class="temp-label">Rom nå</div>
-        <div class="temp-value" id="currentTemp">
-          <span class="spin">◌</span>
-        </div>
-        <div class="temp-sub">Mål: <span id="targetTempDisplay">—</span> &nbsp;|&nbsp; Ute: <span id="outerTempDisplay">—</span></div>
+        <div class="temp-value" id="currentTempEl">—<span class="unit">°</span></div>
+        <div class="temp-sub">Mål: <span id="targetDisplay" style="color:var(--accent)">—</span> &nbsp;|&nbsp; Ute: <span id="outerDisplay">—</span></div>
       </div>
     </div>
   </div>
@@ -598,87 +204,85 @@
   <div class="info-row">
     <div class="info-card">
       <div class="info-card-label">Fuktighet</div>
-      <div class="info-card-value" id="humidityVal">—</div>
+      <div class="info-card-value" id="humidityEl">—</div>
       <div class="info-card-sub">%</div>
     </div>
     <div class="info-card">
       <div class="info-card-label">Vifte</div>
-      <div class="info-card-value" id="fanVal">—</div>
+      <div class="info-card-value" id="fanEl" style="color:var(--accent)">—</div>
       <div class="info-card-sub">hastighet</div>
     </div>
     <div class="info-card">
-      <div class="info-card-label">Modus</div>
-      <div class="info-card-value" id="modeVal">—</div>
-      <div class="info-card-sub" id="modeStatus">—</div>
+      <div class="info-card-label">Innstilt</div>
+      <div class="info-card-value" id="targetCardEl" style="color:var(--accent)">—</div>
+      <div class="info-card-sub" id="targetCardSub">—</div>
     </div>
   </div>
 
-  <!-- Prediction box -->
-  <div class="prediction-box" id="predBox">
-    <div class="pred-title">⚡ AI-prediksjon</div>
-    <div class="pred-content" id="predContent">Beregner...</div>
-    <div class="pred-detail" id="predDetail"></div>
+  <!-- Auto toggle -->
+  <div class="auto-toggle" id="autoToggle" onclick="toggleAuto()">
+    <div>
+      <div class="auto-toggle-title" id="autoToggleTitle">Auto-styring</div>
+      <div class="auto-toggle-sub" id="autoToggleSub">Trykk for å aktivere</div>
+    </div>
+    <div class="toggle-pill" id="togglePill"><div class="toggle-knob" id="toggleKnob"></div></div>
   </div>
 
   <!-- Mode tabs -->
   <div class="mode-tabs">
-    <button class="mode-tab active" onclick="switchPanel('auto')">Auto</button>
-    <button class="mode-tab" onclick="switchPanel('manual')">Manuell</button>
-    <button class="mode-tab" onclick="switchPanel('boost')">Boost</button>
+    <button class="mode-tab active" onclick="switchTab('auto',this)">Auto</button>
+    <button class="mode-tab" onclick="switchTab('manual',this)">Manuell</button>
+    <button class="mode-tab" onclick="switchTab('boost',this)">Boost</button>
   </div>
 
   <!-- AUTO panel -->
   <div class="panel active" id="panel-auto">
     <div class="panel-header">Automatisk styring</div>
     <div class="panel-body">
-      <div class="auto-grid">
-
-        <div>
-          <div class="field-label">Ønsket temperatur</div>
-          <div class="temp-picker">
-            <button onclick="adjustTemp('target', -0.5)">−</button>
-            <div class="val" id="targetTempPicker">22.0°</div>
-            <button onclick="adjustTemp('target', 0.5)">+</button>
-          </div>
+      <div>
+        <div class="field-label">Ønsket temperatur</div>
+        <div class="temp-picker">
+          <button onclick="adj('target',-1)">−</button>
+          <div class="val" id="targetPicker">22°</div>
+          <button onclick="adj('target',1)">+</button>
         </div>
-
+      </div>
+      <div class="info-box">
+        <div class="info-box-title">Dynamisk justering</div>
+        <div class="info-box-content">
+          ✓ Starter med <strong style="color:var(--text)">30°C + høy vifte</strong> ved stor delta<br>
+          ✓ Justerer til <strong style="color:var(--text)">mid-høy vifte</strong> når temp nås<br>
+          ✓ Øker automatisk igjen hvis temp faller
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Planlagte tidspunkter</div>
+        <div class="schedule-list" id="scheduleList">
+          <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">Ingen tidspunkter lagt til</div>
+        </div>
+      </div>
+      <div class="add-box">
+        <div class="add-box-title">Legg til tidspunkt</div>
         <div class="field-row">
           <div>
-            <div class="field-label">Klar innen</div>
-            <input type="time" class="time-input" id="targetTime" value="07:00">
-          </div>
-          <div>
-            <div class="field-label">Nattsenking</div>
-            <div class="temp-picker">
-              <button onclick="adjustTemp('night', -0.5)">−</button>
-              <div class="val" id="nightTempPicker">19.0°</div>
-              <button onclick="adjustTemp('night', 0.5)">+</button>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div class="field-label">Planlagte tidspunkter</div>
-          <div class="schedule-list" id="scheduleList">
-            <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px;">Ingen tidspunkter lagt til</div>
-          </div>
-        </div>
-
-        <div class="field-row">
-          <div>
-            <div class="field-label">Legg til tid</div>
-            <input type="time" class="time-input" id="newSchedTime" value="07:00">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Klokkeslett</div>
+            <input type="time" class="time-input" id="newTime" value="07:00">
           </div>
           <div>
             <div class="field-label">Temp</div>
             <div class="temp-picker">
-              <button onclick="adjustTemp('sched', -0.5)">−</button>
-              <div class="val" id="schedTempPicker">22.0°</div>
-              <button onclick="adjustTemp('sched', 0.5)">+</button>
+              <button onclick="adj('sched',-1)">−</button>
+              <div class="val" id="schedPicker">22°</div>
+              <button onclick="adj('sched',1)">+</button>
             </div>
           </div>
         </div>
-        <button class="send-btn" onclick="addSchedule()" style="width:100%;">+ Legg til tidspunkt</button>
+        <div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Dager</div>
+          <div class="day-grid" id="dayGrid"></div>
+        </div>
+        <button class="send-btn" style="width:100%;padding:12px" onclick="addSchedule()">+ Legg til</button>
+        <button class="send-btn" id="autoBtn" onclick="toggleAuto()" style="width:100%">Aktiver auto</button>
       </div>
     </div>
   </div>
@@ -687,37 +291,36 @@
   <div class="panel" id="panel-manual">
     <div class="panel-header">Manuell styring</div>
     <div class="panel-body">
-      <div class="manual-grid">
-        <div class="slider-wrap">
-          <div class="slider-header">
-            <div class="field-label">Temperatur</div>
-            <div class="slider-val" id="manTempVal">22°C</div>
-          </div>
-          <input type="range" min="16" max="30" step="0.5" value="22" id="manTempSlider"
-            oninput="document.getElementById('manTempVal').textContent=this.value+'°C'">
-          <div style="display:flex;justify-content:space-between;margin-top:4px;">
-            <span style="font-size:9px;color:var(--muted)">16°</span>
-            <span style="font-size:9px;color:var(--muted)">30°</span>
-          </div>
+      <div>
+        <div class="slider-header">
+          <div class="field-label">Temperatur</div>
+          <div class="slider-val" id="manTempVal">22°C</div>
         </div>
+        <input type="range" min="16" max="30" step="0.5" value="22" id="manTempSlider"
+          oninput="document.getElementById('manTempVal').textContent=this.value+'°C'">
+        <div class="slider-minmax"><span>16°</span><span>30°</span></div>
+      </div>
+      <div>
+        <div class="field-label">Viftehastighet</div>
+        <div class="fan-grid">
+          <button class="fan-btn" onclick="selFan(this,'quiet')">Stille</button>
+          <button class="fan-btn" onclick="selFan(this,'low')">Lav</button>
+          <button class="fan-btn" onclick="selFan(this,'medium')">Middels</button>
+          <button class="fan-btn active" onclick="selFan(this,'medium_high')">Mid-Høy</button>
+          <button class="fan-btn" onclick="selFan(this,'high')">Høy</button>
+        </div>
+      </div>
+      <div class="heat-lock">
+        <span style="font-size:18px">♨️</span>
         <div>
-          <div class="field-label" style="margin-bottom:10px;">Viftehastighet</div>
-          <div class="fan-grid">
-            <button class="fan-btn" onclick="selectFan(this,'auto')">Auto</button>
-            <button class="fan-btn" onclick="selectFan(this,'quiet')">Stille</button>
-            <button class="fan-btn active" onclick="selectFan(this,'low')">Lav</button>
-            <button class="fan-btn" onclick="selectFan(this,'medium')">Middels</button>
-            <button class="fan-btn" onclick="selectFan(this,'high')">Høy</button>
-          </div>
+          <div style="color:var(--accent);font-size:12px;font-weight:500">Varme — alltid aktiv</div>
+          <div style="color:var(--muted);font-size:10px;margin-top:2px">Kjøling er permanent deaktivert</div>
         </div>
-        <div>
-          <div class="field-label" style="margin-bottom:10px;">Modus</div>
-          <div class="fan-grid" style="grid-template-columns:repeat(3,1fr);">
-            <button class="fan-btn active" onclick="selectMode(this,'heat')">♨️ Varme</button>
-            <button class="fan-btn" onclick="selectMode(this,'cool')">❄️ Kjøl</button>
-            <button class="fan-btn" onclick="selectMode(this,'fan')">🌀 Vifte</button>
-          </div>
-        </div>
+        <div style="margin-left:auto;font-size:16px">🔒</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:12px">
+        <button class="send-btn" onclick="sendManual()">Send manuell</button>
+        <button class="power-btn" id="powerBtn" onclick="togglePower()">⏻</button>
       </div>
     </div>
   </div>
@@ -726,57 +329,53 @@
   <div class="panel" id="panel-boost">
     <div class="panel-header">Boost — raskest mulig oppvarming</div>
     <div class="panel-body">
-      <div class="auto-grid">
-        <div>
-          <div class="field-label">Måltemperatur for boost</div>
-          <div class="temp-picker">
-            <button onclick="adjustTemp('boost', -0.5)">−</button>
-            <div class="val" id="boostTempPicker">22.0°</div>
-            <button onclick="adjustTemp('boost', 0.5)">+</button>
-          </div>
-        </div>
-        <div style="background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:14px;">
-          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--warm);margin-bottom:8px;">Boost-strategi</div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.8;">
-            ✓ Setter pumpa på <strong style="color:var(--text)">30°C</strong><br>
-            ✓ Vifte på <strong style="color:var(--text)">Høy</strong><br>
-            ✓ Holder til ønsket temp nådd<br>
-            ✓ Logger resultatet for læring
-          </div>
-        </div>
-        <div id="boostStatus" style="display:none;background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);border-radius:10px;padding:14px;">
-          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:6px;">⚡ Boost aktiv</div>
-          <div style="font-size:12px;color:var(--muted);" id="boostStatusText">Varmer opp...</div>
+      <div>
+        <div class="field-label">Måltemperatur</div>
+        <div class="temp-picker">
+          <button onclick="adj('boost',-1)">−</button>
+          <div class="val" id="boostPicker">22°</div>
+          <button onclick="adj('boost',1)">+</button>
         </div>
       </div>
+      <div class="boost-box">
+        <div class="boost-box-title">Boost-strategi</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.9">
+          ✓ Setter pumpa på <strong style="color:var(--text)">30°C</strong><br>
+          ✓ Vifte på <strong style="color:var(--text)">Høy</strong><br>
+          ✓ Holder til ønsket temp nådd<br>
+          ✓ Går til <strong style="color:var(--text)">mid-høy vifte</strong> når målet er nådd<br>
+          ✓ Logger for læring
+        </div>
+      </div>
+      <div class="boost-active-box" id="boostActiveBox">
+        <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">⚡ Boost aktiv</div>
+        <div style="font-size:12px;color:var(--muted)" id="boostStatusText">Varmer opp...</div>
+      </div>
+      <button class="send-btn" id="boostBtn" onclick="toggleBoost()" style="width:100%">⚡ Start boost</button>
     </div>
   </div>
 
-  <!-- Action buttons -->
-  <div class="power-row">
-    <button class="send-btn" id="mainActionBtn" onclick="mainAction()">Send kommando</button>
-    <button class="power-btn" id="powerBtn" onclick="togglePower()" title="Av/på">⏻</button>
-  </div>
 
-  <!-- Learning stats -->
+
+  <!-- Learning -->
   <div class="learn-panel">
     <div class="learn-header">
       <div class="learn-title">Læringsmotor</div>
       <div class="learn-badge" id="learnBadge">0 sesjoner</div>
     </div>
     <div class="learn-body">
-      <div class="learn-stat-row">
+      <div class="learn-stats">
         <div class="learn-stat">
           <div class="learn-stat-label">Snitt oppvarming</div>
-          <div class="learn-stat-val" id="avgHeatTime">—</div>
+          <div class="learn-stat-val" id="avgHeat">—</div>
         </div>
         <div class="learn-stat">
-          <div class="learn-stat-label">Beste prediksjon</div>
-          <div class="learn-stat-val" id="bestAccuracy">—</div>
+          <div class="learn-stat-label">Siste sesjon</div>
+          <div class="learn-stat-val" id="lastSess">—</div>
         </div>
       </div>
-      <div class="field-label" style="margin-bottom:8px;">Siste 7 sesjoner (min/°C delta)</div>
-      <div class="mini-chart"><canvas id="historyChart"></canvas></div>
+      <div style="font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Siste sesjoner (min/°C)</div>
+      <canvas id="histChart" style="width:100%;height:60px"></canvas>
     </div>
   </div>
 
@@ -784,524 +383,833 @@
   <div class="log-section">
     <div class="log-title">Aktivitetslogg</div>
     <div class="log-list" id="logList">
-      <div class="log-item"><span class="log-time">—</span><span class="log-msg">Starter opp...</span></div>
+      <div class="log-item"><span class="log-time">—</span><span>Starter...</span></div>
     </div>
   </div>
 
 </div>
 
-<!-- Bottom nav -->
-<div class="bottom-nav">
-  <button class="nav-btn active" onclick="showSection('main')">
-    <span class="nav-icon">🌡</span>
-    <span>Oversikt</span>
-  </button>
-  <button class="nav-btn" onclick="showSection('schedule')">
-    <span class="nav-icon">⏰</span>
-    <span>Timeplan</span>
-  </button>
-  <button class="nav-btn" onclick="showSection('learn')">
-    <span class="nav-icon">🧠</span>
-    <span>Læring</span>
-  </button>
-  <button class="nav-btn" onclick="showSection('settings')">
-    <span class="nav-icon">⚙️</span>
-    <span>Innstil.</span>
-  </button>
+<!-- TIMEPLAN side -->
+<div class="page" id="page-timeplan" style="display:none;padding:0 0 100px">
+  <div class="header">
+    <div><div class="header-title">Timeplan</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Ukentlig temperaturplan</div></div>
+  </div>
+  <div style="padding:0 24px;display:grid;gap:10px" id="timeplanList"></div>
+  <div style="padding:20px 24px 0">
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px">Legg til nytt tidspunkt</div>
+    <div class="add-box">
+      <div class="field-row">
+        <div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Klokkeslett</div>
+          <input type="time" class="time-input" id="tp-time" value="07:00">
+        </div>
+        <div>
+          <div class="field-label">Temp</div>
+          <div class="temp-picker">
+            <button onclick="adj('tpsched',-1)">−</button>
+            <div class="val" id="tpSchedPicker">22°</div>
+            <button onclick="adj('tpsched',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Dager</div>
+        <div class="day-grid" id="tpDayGrid"></div>
+      </div>
+      <button class="send-btn" style="width:100%;padding:12px" onclick="addScheduleFromTP()">+ Legg til</button>
+    </div>
+  </div>
 </div>
 
-<!-- Toast -->
+<!-- LÆRING side -->
+<div class="page" id="page-learn" style="display:none;padding:0 0 100px">
+  <div class="header">
+    <div><div class="header-title">Læringsmotor</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Historikk og prediksjoner</div></div>
+    <div style="font-size:11px;color:var(--muted)" id="learnBadge2">0 sesjoner</div>
+  </div>
+  <div style="padding:0 24px;display:grid;gap:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div class="info-card"><div class="info-card-label">Snitt tid</div><div class="info-card-value" id="ls-avg">—</div><div class="info-card-sub">min</div></div>
+      <div class="info-card"><div class="info-card-label">Beste</div><div class="info-card-value" id="ls-best">—</div><div class="info-card-sub">min/°C</div></div>
+      <div class="info-card"><div class="info-card-label">Sesjoner</div><div class="info-card-value" id="ls-count" style="color:var(--accent3)">0</div><div class="info-card-sub">totalt</div></div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px">
+      <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:12px">Alle sesjoner — min/°C</div>
+      <canvas id="learnChart" style="width:100%;height:80px"></canvas>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Sesjonslogg</div>
+      <div id="sessionLog" style="padding:12px 18px;display:grid;gap:6px;max-height:300px;overflow-y:auto"></div>
+    </div>
+    <button onclick="clearHistory()" style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.2);border-radius:10px;padding:12px;color:var(--danger);font-family:var(--mono);font-size:11px;cursor:pointer">Slett all læringshistorikk</button>
+  </div>
+</div>
+
+<!-- INNSTILLINGER side -->
+<div class="page" id="page-settings" style="display:none;padding:0 0 100px">
+  <div class="header">
+    <div><div class="header-title">Innstillinger</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Konfigurasjon</div></div>
+  </div>
+  <div style="padding:0 24px;display:grid;gap:14px">
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Varmepumpe</div>
+      <div style="padding:18px;display:grid;gap:14px">
+        <div>
+          <div class="field-label">Normalinnstilling vifte</div>
+          <div class="fan-grid">
+            <button class="fan-btn" onclick="setNormalFan(this,'quiet')">Stille</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'low')">Lav</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'medium')">Middels</button>
+            <button class="fan-btn active" id="normalFanBtn-medium_high" onclick="setNormalFan(this,'medium_high')">Mid-Høy</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'high')">Høy</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Nedre hysteresis — oppvarming starter</div>
+          <div class="temp-picker">
+            <button onclick="adjSetting('hysteresis',-0.1)">−</button>
+            <div class="val" id="hystVal">1.0°</div>
+            <button onclick="adjSetting('hysteresis',0.1)">+</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Temp faller X°C under ønsket → 30°C + høy vifte</div>
+        </div>
+        <div>
+          <div class="field-label">Øvre hysteresis — vifte-modus starter</div>
+          <div class="temp-picker">
+            <button onclick="adjSetting('hysteresis_upper',-0.1)">−</button>
+            <div class="val" id="hystUpperVal">1.0°</div>
+            <button onclick="adjSetting('hysteresis_upper',0.1)">+</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Temp stiger X°C over ønsket → vifte-modus + stille</div>
+        </div>
+        <div>
+          <div class="field-label">Hvilemodus etter</div>
+          <div class="temp-picker">
+            <button onclick="adjSetting('rest_after_hours',-0.5)">−</button>
+            <div class="val" id="restHoursVal">2.0 t</div>
+            <button onclick="adjSetting('rest_after_hours',0.5)">+</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Timer i vifte-modus før pumpa slås helt av</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">System</div>
+      <div style="padding:18px;display:grid;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:12px;color:var(--text)">Sensibo-enhet</div><div style="font-size:10px;color:var(--muted);margin-top:2px">YRqRonRH (skyplus)</div></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:12px;color:var(--text)">Romsensor</div><div style="font-size:10px;color:var(--muted);margin-top:2px">FTKRATUUWC (motion_sensor)</div></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:12px;color:var(--text)">met.no lokasjon</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Finnsnes (69.23°N, 17.98°E)</div></div>
+          <div style="color:var(--accent);font-size:10px">✓</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0">
+          <div><div style="font-size:12px;color:var(--text)">Polling-intervall</div><div style="font-size:10px;color:var(--muted);margin-top:2px">90 sekunder</div></div>
+          <div style="color:var(--accent);font-size:10px">✓</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Kjøling</div>
+      <div style="padding:18px;display:flex;align-items:center;gap:12px;background:rgba(0,212,170,0.04);border-radius:10px;margin:0">
+        <span style="font-size:24px">🔒</span>
+        <div>
+          <div style="color:var(--accent);font-size:12px;font-weight:500">Kjøling permanent deaktivert</div>
+          <div style="color:var(--muted);font-size:10px;margin-top:4px">Pumpa kjører alltid i varmemodus. Denne innstillingen kan ikke endres.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px">
+      <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:12px">Om</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.8">
+        Versjon 1.0<br>
+        Python backend + met.no + Sensibo API<br>
+        Læringsmotor basert på historiske oppvarmingsdata
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom nav -->
+<div class="bottom-nav">
+  <button class="nav-btn active" onclick="showPage('oversikt',this)"><span class="nav-icon">🌡</span><span>Oversikt</span></button>
+  <button class="nav-btn" onclick="showPage('timeplan',this)"><span class="nav-icon">⏰</span><span>Timeplan</span></button>
+  <button class="nav-btn" onclick="showPage('learn',this)"><span class="nav-icon">🧠</span><span>Læring</span></button>
+  <button class="nav-btn" onclick="showPage('settings',this)"><span class="nav-icon">⚙️</span><span>Innstil.</span></button>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-// ============================================================
-// CONFIG — fylles inn i .env på server, brukes via API-kall
-// ============================================================
-const API_BASE = window.location.origin; // Peker mot Python-backend
-const REFRESH_SEC = 30;
+const API = window.location.origin;
+const DAYS = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
+const FAN_LABELS = {auto:"Auto",quiet:"Stille",low:"Lav",medium:"Middels",medium_high:"Mid-Høy",high:"Høy"};
+const NORMAL_FAN = "medium_high";
 
-// ============================================================
-// STATE
-// ============================================================
-let state = {
+// ── State ──
+const S = {
   currentTemp: null,
   targetTemp: 22,
-  nightTemp: 19,
   schedTemp: 22,
   boostTemp: 22,
-  fanSpeed: 'low',
-  acMode: 'heat',
+  manFan: "medium_high",
   isPowered: false,
-  outerTemp: null,
-  humidity: null,
-  schedules: JSON.parse(localStorage.getItem('schedules') || '[]'),
-  history: JSON.parse(localStorage.getItem('heatHistory') || '[]'),
-  currentPanel: 'auto',
+  autoEnabled: false,
+  autoPhase: null, // "varmer" | "holder"
   boostActive: false,
+  boostStart: null,
   boostStartTemp: null,
-  boostStartTime: null,
+  panel: "auto",
+  schedules: [],  // Hentes fra server
+  schedDays: [0,1,2,3,4],
+  history: [],  // Hentes fra server
+  outerTemp: null,
 };
 
-// ============================================================
-// INIT
-// ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+// ── Init ──
+document.addEventListener("DOMContentLoaded", () => {
+  buildDayGrid();
   renderSchedules();
   renderHistory();
+  updatePickerDisplays();
   fetchStatus();
-  setInterval(fetchStatus, REFRESH_SEC * 1000);
-  updatePickers();
+  setInterval(fetchStatus, 90000);
 });
 
-// ============================================================
-// API CALLS
-// ============================================================
+// ── API ──
 async function fetchStatus() {
   try {
-    const res = await fetch(`${API_BASE}/api/status`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const d = await res.json();
-    updateUI(d);
+    const r = await fetch(`${API}/api/status`);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    applyStatus(d);
     setOnline(true);
   } catch(e) {
     setOnline(false);
-    addLog('Kan ikke nå server: ' + e.message, 'warn');
   }
 }
 
-async function sendCommand(cmd) {
-  const btn = document.getElementById('mainActionBtn');
-  btn.classList.add('loading');
-  btn.textContent = 'Sender...';
+async function sendCmd(cmd) {
   try {
-    const res = await fetch(`${API_BASE}/api/command`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(cmd)
+    const r = await fetch(`${API}/api/command`, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cmd)
     });
-    const d = await res.json();
-    if (d.ok) {
-      showToast('Kommando sendt ✓', 'ok');
-      addLog(`Kommando: ${JSON.stringify(cmd)}`, 'ok');
-      setTimeout(fetchStatus, 2000);
-    } else {
-      showToast('Feil: ' + d.error, 'err');
-    }
-  } catch(e) {
-    showToast('Nettverksfeil', 'err');
-  } finally {
-    btn.classList.remove('loading');
-    updateActionBtn();
-  }
+    const d = await r.json();
+    if (d.ok) { showToast("Kommando sendt ✓","ok"); setTimeout(fetchStatus,2000); }
+    else showToast("Feil: "+d.error,"err");
+  } catch(e) { showToast("Nettverksfeil","err"); }
 }
 
-// ============================================================
-// UI UPDATE
-// ============================================================
-function updateUI(d) {
-  // Temperaturer
-  if (d.temperature !== undefined) {
-    state.currentTemp = d.temperature;
-    const el = document.getElementById('currentTemp');
-    el.innerHTML = `${d.temperature.toFixed(1)}<span class="unit">°</span>`;
-    updateTempArc(d.temperature, 14, 30);
+// ── Apply status from API ──
+function applyStatus(d) {
+  // Synkroniser alle verdier fra server
+  if (d.normal_fan != null) {
+    settings.normalFan = d.normal_fan;
+      }
+  if (d.history != null) {
+    S.history = d.history;
+    renderHistory();
   }
-  if (d.humidity !== undefined) {
-    document.getElementById('humidityVal').textContent = d.humidity.toFixed(0);
-    state.humidity = d.humidity;
+  if (d.boost_temp != null && d.boost_temp !== S.boostTemp) {
+    S.boostTemp = d.boost_temp;
+    const bp = document.getElementById("boostPicker");
+    if (bp) bp.textContent = S.boostTemp+"°";
   }
-  if (d.outdoor_temp !== undefined) {
-    state.outerTemp = d.outdoor_temp;
-    document.getElementById('outerTempDisplay').textContent = d.outdoor_temp.toFixed(1) + '°';
-    const el = document.getElementById('outerTempDisplay');
-    el.style.color = d.outdoor_temp < 0 ? 'var(--cold)' : 'var(--warm)';
+  if (d.schedules != null && JSON.stringify(d.schedules) !== JSON.stringify(S.schedules)) {
+    S.schedules = d.schedules;
+        renderSchedules();
   }
-
-  // AC state
+  if (d.auto_enabled != null && d.auto_enabled !== S.autoEnabled) {
+    S.autoEnabled = d.auto_enabled;
+    const tog = document.getElementById("autoToggle");
+    const pill = document.getElementById("togglePill");
+    if (tog) tog.classList.toggle("on", S.autoEnabled);
+    if (pill) pill.classList.toggle("on", S.autoEnabled);
+    updateAutoToggleUI();
+    updateMainBtn();
+  }
+  if (d.target_temp != null) {
+    S.targetTemp = d.target_temp;
+    updatePickerDisplays();
+    document.getElementById("targetDisplay").textContent = S.targetTemp+"°";
+    document.getElementById("targetCardEl").textContent = S.targetTemp+"°";
+    updateAutoToggleUI();
+  }
+  if (d.hysteresis != null && !settings._serverSynced) {
+    settings.hysteresis = d.hysteresis;
+    settings.hysteresis_upper = d.hysteresis_upper || 1.0;
+    settings.rest_after_hours = d.rest_after_hours || 2.0;
+    settings._serverSynced = true;
+        const el = document.getElementById("hystVal");
+    if (el) el.textContent = settings.hysteresis.toFixed(1)+"°";
+    const el2 = document.getElementById("hystUpperVal");
+    if (el2) el2.textContent = settings.hysteresis_upper.toFixed(1)+"°";
+    const el3 = document.getElementById("restHoursVal");
+    if (el3) el3.textContent = settings.rest_after_hours.toFixed(1)+" t";
+  }
+  if (d.temperature != null) {
+    S.currentTemp = d.temperature;
+    document.getElementById("currentTempEl").innerHTML = d.temperature.toFixed(1)+'<span class="unit">°</span>';
+    updateArc(d.temperature);
+  }
+  if (d.humidity != null) document.getElementById("humidityEl").textContent = d.humidity.toFixed(0);
+  if (d.outdoor_temp != null) {
+    S.outerTemp = d.outdoor_temp;
+    const el = document.getElementById("outerDisplay");
+    el.textContent = d.outdoor_temp.toFixed(1)+"°";
+    el.style.color = d.outdoor_temp < 0 ? "var(--cold)" : "var(--warm)";
+  }
   if (d.ac) {
-    state.isPowered = d.ac.on;
-    state.targetTemp = d.ac.targetTemperature || state.targetTemp;
-    state.fanSpeed = d.ac.fanLevel || state.fanSpeed;
-    state.acMode = d.ac.mode || state.acMode;
-
-    document.getElementById('targetTempDisplay').textContent = state.targetTemp + '°';
-    document.getElementById('fanVal').textContent = fanLabel(state.fanSpeed);
-    document.getElementById('modeVal').textContent = modeLabel(state.acMode);
-    document.getElementById('modeStatus').textContent = state.isPowered ? 'På' : 'Av';
-
-    const powerBtn = document.getElementById('powerBtn');
-    powerBtn.classList.toggle('on', state.isPowered);
+    S.isPowered = d.ac.on;
+    document.getElementById("fanEl").textContent = FAN_LABELS[d.ac.fanLevel] || d.ac.fanLevel || "—";
+    // Vis faktisk AC-temp i innstilt-kortet
+    const acTemp = d.ac.targetTemperature;
+    const boostActive = d.boost_active;
+    document.getElementById("targetCardEl").textContent = acTemp+"°";
+    document.getElementById("targetCardSub").textContent = boostActive ? "⚡ boost" : S.autoEnabled ? "auto" : "manuell";
   }
+  document.getElementById("targetDisplay").textContent = S.targetTemp+"°";
+  document.getElementById("lastUpdate").textContent = "Sist oppdatert "+new Date().toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
 
   // Boost sjekk
-  if (state.boostActive && state.currentTemp >= state.boostTemp) {
-    endBoost();
-  }
-  if (state.boostActive) {
-    updateBoostStatus();
-  }
-
-  // Prediksjon
-  updatePrediction();
-
-  // Tidsstempel
-  const now = new Date();
-  document.getElementById('lastUpdate').textContent =
-    'Sist oppdatert ' + now.toLocaleTimeString('no-NO', {hour:'2-digit',minute:'2-digit'});
+  if (S.boostActive && S.currentTemp >= S.boostTemp) endBoost();
+  if (S.boostActive) updateBoostStatus();
 }
 
-function updateTempArc(val, min, max) {
-  const pct = Math.min(1, Math.max(0, (val - min) / (max - min)));
-  const circumference = 2 * Math.PI * 100;
-  const offset = circumference * (1 - pct);
-  document.getElementById('tempArc').style.strokeDashoffset = offset;
-
-  // Farge basert på temp
-  const arc = document.getElementById('tempArc');
-  if (val < 18) arc.style.stroke = 'var(--cold)';
-  else if (val > 24) arc.style.stroke = 'var(--warm)';
-  else arc.style.stroke = 'var(--accent)';
+// ── Arc ──
+function updateArc(val) {
+  const pct = Math.min(1, Math.max(0, (val-14)/16));
+  const circ = 2*Math.PI*100;
+  const arc = document.getElementById("tempArc");
+  arc.style.strokeDashoffset = circ*(1-pct);
+  arc.style.stroke = val<18?"var(--cold)":val>24?"var(--warm)":"var(--accent)";
 }
 
 function setOnline(ok) {
-  const dot = document.getElementById('statusDot');
-  const txt = document.getElementById('statusText');
-  dot.className = 'status-dot ' + (ok ? 'online' : 'error');
-  txt.textContent = ok ? 'tilkoblet' : 'frakoblet';
+  document.getElementById("statusDot").className = "status-dot"+(ok?" online":" error");
+  document.getElementById("statusText").textContent = ok?"tilkoblet":"frakoblet";
 }
 
-// ============================================================
-// PANELS
-// ============================================================
-function switchPanel(name) {
-  state.currentPanel = name;
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('panel-' + name).classList.add('active');
-  event.target.classList.add('active');
-  updateActionBtn();
+// ── Tabs ──
+function switchTab(name, btn) {
+  S.panel = name;
+  document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".mode-tab").forEach(t=>t.classList.remove("active"));
+  document.getElementById("panel-"+name).classList.add("active");
+  btn.classList.add("active");
 }
 
-function updateActionBtn() {
-  const btn = document.getElementById('mainActionBtn');
-  if (state.currentPanel === 'auto') btn.textContent = 'Aktiver auto';
-  else if (state.currentPanel === 'manual') btn.textContent = 'Send manuell';
-  else if (state.currentPanel === 'boost') {
-    btn.textContent = state.boostActive ? 'Stopp boost' : '⚡ Start boost';
-    btn.className = state.boostActive ? 'send-btn danger' : 'send-btn';
+// ── Auto toggle ──
+function toggleAuto() {
+  S.autoEnabled = !S.autoEnabled;
+  const tog = document.getElementById("autoToggle");
+  const pill = document.getElementById("togglePill");
+  tog.classList.toggle("on", S.autoEnabled);
+  pill.classList.toggle("on", S.autoEnabled);
+  if (S.autoEnabled) {
+    addLog("Auto aktivert","ok");
+    showToast("Auto aktivert ✓","ok");
+  } else {
+    S.autoPhase = null;
+    addLog("Auto deaktivert","warn");
+    showToast("Auto av");
+  }
+  // Lagre på server via settings
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({auto_enabled: S.autoEnabled, target_temp: S.targetTemp})
+  }).catch(()=>{});
+  updateAutoToggleUI();
+}
+
+function updateAutoToggleUI() {
+  const title = document.getElementById("autoToggleTitle");
+  const sub = document.getElementById("autoToggleSub");
+  if (S.autoEnabled) {
+    title.textContent = S.autoPhase==="varmer"?"⚡ Varmer opp":"✓ Holder temperatur";
+    sub.textContent = S.autoPhase==="varmer"?`30°C · høy vifte`:`${S.targetTemp}°C · mid-høy vifte`;
+  } else {
+    title.textContent = "Auto-styring";
+    sub.textContent = "Trykk for å aktivere";
   }
 }
 
-// ============================================================
-// TEMP PICKERS
-// ============================================================
-function adjustTemp(type, delta) {
-  const keys = {target:'targetTemp', night:'nightTemp', sched:'schedTemp', boost:'boostTemp'};
-  const ids = {target:'targetTempPicker', night:'nightTempPicker', sched:'schedTempPicker', boost:'boostTempPicker'};
-  state[keys[type]] = Math.round((state[keys[type]] + delta) * 2) / 2;
-  state[keys[type]] = Math.max(14, Math.min(30, state[keys[type]]));
-  document.getElementById(ids[type]).textContent = state[keys[type]].toFixed(1) + '°';
+// ── Feedback loop — kjøres på SERVER, ikke her ──
+function autoFeedbackLoop() {
+  // Ingenting — serveren håndterer all auto-logikk
 }
 
-function updatePickers() {
-  document.getElementById('targetTempPicker').textContent = state.targetTemp.toFixed(1) + '°';
-  document.getElementById('nightTempPicker').textContent = state.nightTemp.toFixed(1) + '°';
-  document.getElementById('schedTempPicker').textContent = state.schedTemp.toFixed(1) + '°';
-  document.getElementById('boostTempPicker').textContent = state.boostTemp.toFixed(1) + '°';
-}
-
-// ============================================================
-// FAN / MODE SELECT
-// ============================================================
-function selectFan(btn, speed) {
-  document.querySelectorAll('.fan-btn').forEach(b => {
-    if (b.parentElement === btn.parentElement) b.classList.remove('active');
-  });
-  btn.classList.add('active');
-  state.fanSpeed = speed;
-}
-
-function selectMode(btn, mode) {
-  document.querySelectorAll('.fan-btn').forEach(b => {
-    if (b.parentElement === btn.parentElement) b.classList.remove('active');
-  });
-  btn.classList.add('active');
-  state.acMode = mode;
-}
-
-function fanLabel(f) {
-  const m = {auto:'Auto',quiet:'Stille',low:'Lav',medium:'Middels',medium_high:'Mid-Høy',high:'Høy'};
-  return m[f] || f;
-}
-function modeLabel(m) {
-  const lbl = {heat:'Varme',cool:'Kjøl',fan:'Vifte',dry:'Tørk',auto:'Auto'};
-  return lbl[m] || m;
-}
-
-// ============================================================
-// MAIN ACTION
-// ============================================================
+// ── Main action ──
 function mainAction() {
-  if (state.currentPanel === 'auto') {
-    sendCommand({
-      type: 'auto',
-      targetTemp: state.targetTemp,
-      targetTime: document.getElementById('targetTime').value,
-      nightTemp: state.nightTemp,
-      schedules: state.schedules
-    });
-  } else if (state.currentPanel === 'manual') {
-    sendCommand({
-      type: 'manual',
-      on: true,
-      mode: state.acMode,
-      targetTemperature: parseFloat(document.getElementById('manTempSlider').value),
-      fanLevel: state.fanSpeed
-    });
-  } else if (state.currentPanel === 'boost') {
-    if (state.boostActive) stopBoost();
+  if (S.panel==="auto") toggleAuto();
+  else if (S.panel==="manual") {
+    const temp = parseFloat(document.getElementById("manTempSlider").value);
+    sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:temp,fanLevel:S.manFan});
+    addLog(`Manuell: ${temp}°C, ${FAN_LABELS[S.manFan]} vifte`,"ok");
+  } else if (S.panel==="boost") {
+    if (S.boostActive) stopBoost();
     else startBoost();
   }
 }
 
-function togglePower() {
-  sendCommand({ type: 'power', on: !state.isPowered });
+function updateMainBtn() {
+  const btn = document.getElementById("autoBtn");
+  if (!btn) return;
+  btn.textContent = S.autoEnabled ? "Stopp auto" : "Aktiver auto";
+  btn.className = "send-btn" + (S.autoEnabled ? " danger" : "");
 }
 
-// ============================================================
-// BOOST
-// ============================================================
+function sendManual() {
+  const temp = parseFloat(document.getElementById("manTempSlider").value);
+  sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:temp,fanLevel:S.manFan});
+  addLog(`Manuell: ${temp}°C, ${FAN_LABELS[S.manFan]} vifte`,"ok");
+}
+
+function toggleBoost() {
+  if (S.boostActive) {
+    S.boostActive = false;
+    document.getElementById("boostActiveBox").classList.remove("show");
+    document.getElementById("boostBtn").textContent = "⚡ Start boost";
+    document.getElementById("boostBtn").className = "send-btn";
+    sendCmd({type:"stop_boost"});
+    sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:S.boostTemp,fanLevel:NORMAL_FAN});
+    addLog("Boost stoppet manuelt","warn");
+  } else {
+    S.boostActive = true;
+    S.boostStartTemp = S.currentTemp;
+    S.boostStart = Date.now();
+    document.getElementById("boostActiveBox").classList.add("show");
+    document.getElementById("boostBtn").textContent = "Stopp boost";
+    document.getElementById("boostBtn").className = "send-btn danger";
+    sendCmd({type:"boost", boostTemp: S.boostTemp});
+    addLog(`Boost startet → 30°C, høy vifte. Mål: ${S.boostTemp}°C`,"ok");
+  }
+}
+
+// ── Power ──
+function togglePower() {
+  sendCmd({type:"power",on:!S.isPowered});
+  const pb = document.getElementById("powerBtn");
+  if (pb) pb.classList.toggle("on",!S.isPowered);
+  addLog(S.isPowered?"Pumpe slått av":"Pumpe slått på","ok");
+}
+
+// ── Boost ──
 function startBoost() {
-  state.boostActive = true;
-  state.boostStartTemp = state.currentTemp;
-  state.boostStartTime = Date.now();
-  sendCommand({
-    type: 'manual',
-    on: true,
-    mode: 'heat',
-    targetTemperature: 30,
-    fanLevel: 'high'
-  });
-  document.getElementById('boostStatus').style.display = 'block';
-  addLog(`Boost startet. Mål: ${state.boostTemp}°, Fra: ${state.currentTemp}°`, 'ok');
-  updateActionBtn();
+  S.boostActive = true;
+  S.boostStart = Date.now();
+  S.boostStartTemp = S.currentTemp;
+  sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:30,fanLevel:"high"});
+  document.getElementById("boostActiveBox").classList.add("show");
+  addLog(`Boost startet → 30°C, høy vifte. Mål: ${S.boostTemp}°C`,"ok");
+  updateMainBtn();
 }
 
 function stopBoost() {
-  state.boostActive = false;
-  document.getElementById('boostStatus').style.display = 'none';
-  sendCommand({
-    type: 'manual',
-    on: true,
-    mode: 'heat',
-    targetTemperature: state.boostTemp,
-    fanLevel: 'medium_high'
-  });
-  addLog('Boost stoppet manuelt', 'warn');
-  updateActionBtn();
+  S.boostActive = false;
+  document.getElementById("boostActiveBox").classList.remove("show");
+  sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:S.boostTemp,fanLevel:NORMAL_FAN});
+  addLog("Boost stoppet manuelt","warn");
+  updateMainBtn();
 }
 
 function endBoost() {
-  const elapsed = (Date.now() - state.boostStartTime) / 60000;
-  const delta = state.boostTemp - state.boostStartTemp;
-  const entry = {
-    ts: Date.now(),
-    fromTemp: state.boostStartTemp,
-    toTemp: state.boostTemp,
-    outerTemp: state.outerTemp,
-    minPerDeg: elapsed / Math.max(0.1, delta),
-    totalMin: elapsed.toFixed(1)
-  };
-  state.history.push(entry);
-  if (state.history.length > 50) state.history.shift();
-  localStorage.setItem('heatHistory', JSON.stringify(state.history));
-
-  state.boostActive = false;
-  document.getElementById('boostStatus').style.display = 'none';
-  sendCommand({
-    type: 'manual', on: true, mode: 'heat',
-    targetTemperature: state.boostTemp, fanLevel: 'medium_high'
-  });
-  addLog(`Boost ferdig! ${elapsed.toFixed(0)} min for ${delta.toFixed(1)}°C`, 'ok');
+  const elapsed = (Date.now()-S.boostStart)/60000;
+  const delta = S.boostTemp-(S.boostStartTemp||S.currentTemp);
+  const entry = {ts:Date.now(),fromTemp:S.boostStartTemp,toTemp:S.boostTemp,
+    outerTemp:S.outerTemp,minPerDeg:elapsed/Math.max(0.1,delta),totalMin:elapsed.toFixed(1)};
+  S.history.push(entry);
+  if (S.history.length>50) S.history.shift();
+    S.boostActive = false;
+  document.getElementById("boostActiveBox").classList.remove("show");
+  sendCmd({type:"manual",on:true,mode:"heat",targetTemperature:S.boostTemp,fanLevel:NORMAL_FAN});
+  addLog(`Boost ferdig! ${elapsed.toFixed(0)} min for ${delta.toFixed(1)}°C`,"ok");
   renderHistory();
-  updateActionBtn();
+  updateMainBtn();
 }
 
 function updateBoostStatus() {
-  const elapsed = ((Date.now() - state.boostStartTime) / 60000).toFixed(0);
-  const remaining = Math.max(0, state.boostTemp - (state.currentTemp || 0));
-  document.getElementById('boostStatusText').textContent =
-    `${elapsed} min brukt · ${remaining.toFixed(1)}°C igjen til mål`;
+  const elapsed = ((Date.now()-S.boostStart)/60000).toFixed(0);
+  const rem = Math.max(0,S.boostTemp-(S.currentTemp||0));
+  document.getElementById("boostStatusText").textContent =
+    `${elapsed} min brukt · ${rem.toFixed(1)}°C igjen til mål`;
 }
 
-// ============================================================
-// SCHEDULE
-// ============================================================
+function updatePickerDisplays() {
+  document.getElementById("targetPicker").textContent = S.targetTemp+"°";
+  document.getElementById("schedPicker").textContent = S.schedTemp+"°";
+  document.getElementById("boostPicker").textContent = S.boostTemp+"°";
+}
+
+// ── Fan ──
+function selFan(btn, speed) {
+  document.querySelectorAll(".fan-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  S.manFan = speed;
+}
+
+// ── Day grid ──
+function buildDayGrid() {
+  const grid = document.getElementById("dayGrid");
+  DAYS.forEach((d,i) => {
+    const btn = document.createElement("button");
+    btn.className = "day-btn"+(S.schedDays.includes(i)?" active":"");
+    btn.textContent = d;
+    btn.onclick = () => {
+      if (S.schedDays.includes(i)) S.schedDays = S.schedDays.filter(x=>x!==i);
+      else S.schedDays = [...S.schedDays,i].sort((a,b)=>a-b);
+      btn.classList.toggle("active",S.schedDays.includes(i));
+    };
+    grid.appendChild(btn);
+  });
+}
+
+// ── Schedule ──
 function addSchedule() {
-  const time = document.getElementById('newSchedTime').value;
-  if (!time) return;
-  state.schedules.push({ time, temp: state.schedTemp });
-  state.schedules.sort((a, b) => a.time.localeCompare(b.time));
-  localStorage.setItem('schedules', JSON.stringify(state.schedules));
-  renderSchedules();
-  showToast('Tidspunkt lagt til', 'ok');
+  if (!S.schedDays.length) { showToast("Velg minst én dag","err"); return; }
+  const time = document.getElementById("newTime").value;
+  S.schedules.push({time,temp:S.schedTemp,days:[...S.schedDays]});
+  S.schedules.sort((a,b)=>a.time.localeCompare(b.time));
+    renderSchedules();
+  addLog(`Timeplan: ${time} → ${S.schedTemp}°C (${S.schedDays.map(d=>DAYS[d]).join(",")})`, "ok");
+  showToast("Tidspunkt lagt til","ok");
 }
 
-function removeSchedule(i) {
-  state.schedules.splice(i, 1);
-  localStorage.setItem('schedules', JSON.stringify(state.schedules));
-  renderSchedules();
+function dayStr(days) {
+  if (days.length===7) return "Alle dager";
+  const sorted = [...days].sort();
+  if (JSON.stringify(sorted)===JSON.stringify([0,1,2,3,4])) return "Man–Fre";
+  if (JSON.stringify(sorted)===JSON.stringify([5,6])) return "Lør–Søn";
+  return days.map(d=>DAYS[d]).join(", ");
 }
 
 function renderSchedules() {
-  const list = document.getElementById('scheduleList');
-  if (!state.schedules.length) {
-    list.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px;">Ingen tidspunkter lagt til</div>';
+  const list = document.getElementById("scheduleList");
+  if (!S.schedules.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">Ingen tidspunkter lagt til</div>';
     return;
   }
-  list.innerHTML = state.schedules.map((s, i) => `
-    <div class="schedule-item">
-      <span class="time">${s.time}</span>
-      <span class="temp-tag">${s.temp.toFixed(1)}°</span>
+  list.innerHTML = S.schedules.map((s,i) => `
+    <div class="schedule-item fade-in">
+      <div class="schedule-item-left">
+        <div class="schedule-item-top">
+          <span class="schedule-time">${s.time}</span>
+          <span class="schedule-temp">${s.temp.toFixed(1)}°</span>
+        </div>
+        <div class="schedule-days">${dayStr(s.days||[0,1,2,3,4,5,6])}</div>
+      </div>
       <button class="del-btn" onclick="removeSchedule(${i})">✕</button>
     </div>
-  `).join('');
+  `).join("");
 }
 
-// ============================================================
-// HISTORY / LEARNING
-// ============================================================
+function removeSchedule(i) {
+  S.schedules.splice(i,1);
+    renderSchedules();
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({schedules: S.schedules})
+  }).catch(()=>{});
+}
+
+// ── History ──
 function renderHistory() {
-  const h = state.history;
-  const badge = document.getElementById('learnBadge');
-  badge.textContent = h.length + ' sesjoner';
-
+  const h = S.history;
+  document.getElementById("learnBadge").textContent = h.length+" sesjoner";
   if (!h.length) return;
-
-  // Snitt
-  const avgMin = h.reduce((a, b) => a + parseFloat(b.totalMin), 0) / h.length;
-  document.getElementById('avgHeatTime').textContent = avgMin.toFixed(0) + ' min';
-
-  // Beste nøyaktighet (laveste avvik)
-  document.getElementById('bestAccuracy').textContent =
-    (h[h.length - 1].minPerDeg * 60).toFixed(0) + ' sek/°';
-
-  // Mini-chart
-  drawMiniChart(h.slice(-7).map(x => parseFloat(x.minPerDeg)));
+  const avg = h.reduce((a,b)=>a+parseFloat(b.totalMin),0)/h.length;
+  document.getElementById("avgHeat").textContent = avg.toFixed(0)+" min";
+  const last = h[h.length-1];
+  document.getElementById("lastSess").textContent = (parseFloat(last.minPerDeg)*60).toFixed(0)+" sek/°";
+  drawChart(h.slice(-7).map(x=>parseFloat(x.minPerDeg)));
 }
 
-function drawMiniChart(vals) {
-  const canvas = document.getElementById('historyChart');
-  if (!canvas || !vals.length) return;
-  const ctx = canvas.getContext('2d');
-  canvas.width = canvas.offsetWidth * 2;
-  canvas.height = canvas.offsetHeight * 2;
-  ctx.scale(2, 2);
-  const W = canvas.offsetWidth / 2;
-  const H = canvas.offsetHeight / 2;
-  const max = Math.max(...vals) * 1.1;
-  const min = Math.min(...vals) * 0.9;
-  const pad = 10;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // Grid
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 3; i++) {
-    const y = pad + (H - 2 * pad) * i / 3;
-    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
-  }
-
-  // Line
-  const step = (W - 2 * pad) / Math.max(vals.length - 1, 1);
+function drawChart(vals) {
+  const canvas = document.getElementById("histChart");
+  if (!canvas||!vals.length) return;
+  const ctx = canvas.getContext("2d");
+  canvas.width = canvas.offsetWidth*2;
+  canvas.height = 120;
+  ctx.scale(2,2);
+  const W=canvas.offsetWidth/2, H=60, pad=10;
+  const max=Math.max(...vals)*1.1, min=Math.min(...vals)*0.9;
+  const step=(W-2*pad)/Math.max(vals.length-1,1);
+  ctx.clearRect(0,0,W,H);
   ctx.beginPath();
-  vals.forEach((v, i) => {
-    const x = pad + i * step;
-    const y = H - pad - (H - 2 * pad) * (v - min) / Math.max(max - min, 0.1);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  vals.forEach((v,i)=>{
+    const x=pad+i*step, y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
   });
-  ctx.strokeStyle = 'rgba(0,212,170,0.8)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Dots
-  vals.forEach((v, i) => {
-    const x = pad + i * step;
-    const y = H - pad - (H - 2 * pad) * (v - min) / Math.max(max - min, 0.1);
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'var(--accent)';
-    ctx.fill();
+  ctx.strokeStyle="rgba(0,212,170,0.8)"; ctx.lineWidth=2; ctx.stroke();
+  vals.forEach((v,i)=>{
+    const x=pad+i*step, y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);
+    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
+    ctx.fillStyle="#00d4aa"; ctx.fill();
   });
 }
 
-// ============================================================
-// PREDICTION
-// ============================================================
-function updatePrediction() {
-  if (!state.currentTemp || !state.history.length) {
-    document.getElementById('predBox').classList.remove('visible');
-    return;
-  }
-  const delta = state.targetTemp - state.currentTemp;
-  if (delta <= 0.5) {
-    document.getElementById('predBox').classList.remove('visible');
-    return;
-  }
-
-  // Finn relevante historiske punkter basert på utetemperatur
-  const outerBin = Math.round((state.outerTemp || 0) / 5) * 5;
-  const relevant = state.history.filter(h =>
-    state.outerTemp === null || Math.abs(h.outerTemp - outerBin) <= 7
-  );
-
-  const avgMinPerDeg = relevant.length
-    ? relevant.reduce((a, b) => a + b.minPerDeg, 0) / relevant.length
-    : 8; // Default: 8 min per grad
-
-  const estMin = Math.round(delta * avgMinPerDeg);
-  const startTime = new Date(Date.now() + (/* target offset */ 0));
-
-  document.getElementById('predContent').textContent =
-    `Estimert ${estMin} min for +${delta.toFixed(1)}°C`;
-  document.getElementById('predDetail').textContent =
-    `Basert på ${relevant.length || 0} lignende sesjoner · ${avgMinPerDeg.toFixed(1)} min/°C`;
-  document.getElementById('predBox').classList.add('visible');
-}
-
-// ============================================================
-// LOG
-// ============================================================
+// ── Log ──
 function addLog(msg, type) {
-  const list = document.getElementById('logList');
-  const now = new Date().toLocaleTimeString('no-NO', {hour:'2-digit',minute:'2-digit'});
-  const cls = type === 'ok' ? 'log-ok' : type === 'warn' ? 'log-warn' : '';
-  const item = document.createElement('div');
-  item.className = 'log-item fade-in';
-  item.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${cls}">${msg}</span>`;
-  list.insertBefore(item, list.firstChild);
-  while (list.children.length > 12) list.removeChild(list.lastChild);
+  const list = document.getElementById("logList");
+  const t = new Date().toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
+  const cls = type==="ok"?"log-ok":type==="warn"?"log-warn":"";
+  const item = document.createElement("div");
+  item.className = "log-item fade-in";
+  item.innerHTML = `<span class="log-time">${t}</span><span class="${cls}">${msg}</span>`;
+  list.insertBefore(item,list.firstChild);
+  while(list.children.length>12) list.removeChild(list.lastChild);
 }
 
-// ============================================================
-// TOAST
-// ============================================================
+// ── Navigasjon ──
+const PAGES = ["oversikt","timeplan","learn","settings"];
+let tpSchedTemp = 22;
+let tpSchedDays = [0,1,2,3,4];
+let settings = {"normalFan":"medium_high","hysteresis":1.0,"hysteresis_upper":1.0,"rest_after_hours":2.0};
+
+function showPage(name, btn) {
+  // Skjul alt
+  document.querySelector(".app").style.display = name==="oversikt"?"block":"none";
+  PAGES.forEach(p => {
+    const el = document.getElementById("page-"+p);
+    if (el) el.style.display = "none";
+  });
+  // Vis riktig side
+  if (name !== "oversikt") {
+    document.getElementById("page-"+name).style.display = "block";
+  }
+  // Oppdater nav
+  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  // Oppdater innhold
+  if (name==="timeplan") renderTimeplanPage();
+  if (name==="learn") renderLearnPage();
+  if (name==="settings") renderSettingsPage();
+}
+
+// ── Timeplan-side ──
+function buildTpDayGrid() {
+  const grid = document.getElementById("tpDayGrid");
+  if (!grid || grid.children.length) return;
+  DAYS.forEach((d,i) => {
+    const btn = document.createElement("button");
+    btn.className = "day-btn"+(tpSchedDays.includes(i)?" active":"");
+    btn.textContent = d;
+    btn.onclick = () => {
+      if (tpSchedDays.includes(i)) tpSchedDays = tpSchedDays.filter(x=>x!==i);
+      else tpSchedDays = [...tpSchedDays,i].sort((a,b)=>a-b);
+      btn.classList.toggle("active",tpSchedDays.includes(i));
+    };
+    grid.appendChild(btn);
+  });
+}
+
+function renderTimeplanPage() {
+  buildTpDayGrid();
+  const list = document.getElementById("timeplanList");
+  if (!S.schedules.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:20px">Ingen tidspunkter lagt til</div>';
+    return;
+  }
+  list.innerHTML = S.schedules.map((s,i) => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent)">${s.time}</span>
+          <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.2);border-radius:8px;padding:3px 10px;color:var(--accent);font-size:13px">${s.temp.toFixed(1)}°C</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted)">${dayStr(s.days||[0,1,2,3,4,5,6])}</div>
+      </div>
+      <button onclick="removeScheduleTP(${i})" style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.2);border-radius:8px;padding:8px 14px;color:var(--danger);font-family:var(--mono);font-size:11px;cursor:pointer">Slett</button>
+    </div>
+  `).join("");
+}
+
+function addScheduleFromTP() {
+  if (!tpSchedDays.length) { showToast("Velg minst én dag","err"); return; }
+  const time = document.getElementById("tp-time").value;
+  S.schedules.push({time,temp:tpSchedTemp,days:[...tpSchedDays]});
+  S.schedules.sort((a,b)=>a.time.localeCompare(b.time));
+    renderTimeplanPage();
+  renderSchedules();
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({schedules: S.schedules})
+  }).catch(()=>{});
+  addLog(`Timeplan: ${time} → ${tpSchedTemp}°C (${tpSchedDays.map(d=>DAYS[d]).join(",")})`, "ok");
+  showToast("Tidspunkt lagt til","ok");
+}
+
+function removeScheduleTP(i) {
+  S.schedules.splice(i,1);
+    renderTimeplanPage();
+  renderSchedules();
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({schedules: S.schedules})
+  }).catch(()=>{});
+}
+
+function adj(type, delta) {
+  if (type==="tpsched") {
+    tpSchedTemp = Math.round(tpSchedTemp + delta);
+    tpSchedTemp = Math.max(16, Math.min(30, tpSchedTemp));
+    document.getElementById("tpSchedPicker").textContent = tpSchedTemp+"°";
+    return;
+  }
+  const map = {target:"targetTemp", sched:"schedTemp", boost:"boostTemp"};
+  const ids = {target:"targetPicker", sched:"schedPicker", boost:"boostPicker"};
+  S[map[type]] = Math.round(S[map[type]] + delta);
+  S[map[type]] = Math.max(16, Math.min(30, S[map[type]]));
+  document.getElementById(ids[type]).textContent = S[map[type]]+"°";
+  if (type==="boost") {
+    fetch(`${API}/api/settings`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({boost_temp: S.boostTemp})
+    }).catch(()=>{});
+  }
+  if (type==="target") {
+    document.getElementById("targetDisplay").textContent = S.targetTemp+"°";
+    document.getElementById("targetCardEl").textContent = S.targetTemp+"°";
+    // Lagre på server
+    fetch(`${API}/api/settings`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({target_temp: S.targetTemp})
+    }).catch(()=>{});
+  }
+}
+
+// ── Læring-side ──
+function renderLearnPage() {
+  const h = S.history;
+  document.getElementById("learnBadge2").textContent = h.length+" sesjoner";
+  document.getElementById("ls-count").textContent = h.length;
+  if (!h.length) {
+    document.getElementById("ls-avg").textContent = "—";
+    document.getElementById("ls-best").textContent = "—";
+    document.getElementById("sessionLog").innerHTML = '<div style="font-size:11px;color:var(--muted)">Ingen sesjoner ennå — start en boost for å logge</div>';
+    return;
+  }
+  const avg = h.reduce((a,b)=>a+parseFloat(b.totalMin),0)/h.length;
+  document.getElementById("ls-avg").textContent = avg.toFixed(0);
+  const best = Math.min(...h.map(x=>parseFloat(x.minPerDeg)));
+  document.getElementById("ls-best").textContent = best.toFixed(1);
+
+  // Full graf
+  const canvas = document.getElementById("learnChart");
+  if (canvas) {
+    canvas.width = canvas.offsetWidth*2;
+    canvas.height = 160;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(2,2);
+    const vals = h.map(x=>parseFloat(x.minPerDeg));
+    const W=canvas.offsetWidth/2, H=80, pad=12;
+    const max=Math.max(...vals)*1.1, min=Math.min(...vals)*0.9;
+    const step=(W-2*pad)/Math.max(vals.length-1,1);
+    ctx.clearRect(0,0,W,H);
+    // Grid
+    ctx.strokeStyle="rgba(255,255,255,0.04)"; ctx.lineWidth=1;
+    for(let i=0;i<=3;i++){const y=pad+(H-2*pad)*i/3;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();}
+    // Line
+    ctx.beginPath();
+    vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+    ctx.strokeStyle="rgba(0,212,170,0.8)"; ctx.lineWidth=2; ctx.stroke();
+    // Fill
+    ctx.beginPath();
+    vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+    ctx.lineTo(pad+((vals.length-1)*step),H-pad); ctx.lineTo(pad,H-pad);
+    ctx.fillStyle="rgba(0,212,170,0.06)"; ctx.fill();
+    // Dots
+    vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle="#00d4aa";ctx.fill();});
+  }
+
+  // Sesjonslogg
+  const log = document.getElementById("sessionLog");
+  log.innerHTML = [...h].reverse().map((s,i) => {
+    const d = new Date(s.ts);
+    const dato = d.toLocaleDateString("no-NO",{day:"2-digit",month:"2-digit"});
+    const tid = d.toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:11px">
+        <div>
+          <span style="color:var(--accent)">${dato} ${tid}</span>
+          <span style="color:var(--muted);margin-left:8px">${parseFloat(s.fromTemp).toFixed(1)}° → ${parseFloat(s.toTemp).toFixed(1)}°</span>
+        </div>
+        <div style="text-align:right">
+          <div style="color:var(--text)">${parseFloat(s.totalMin).toFixed(0)} min</div>
+          <div style="color:var(--muted);font-size:9px">ute: ${s.outerTemp!=null?parseFloat(s.outerTemp).toFixed(1)+"°":"—"}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function clearHistory() {
+  if (!confirm("Slett all læringshistorikk?")) return;
+  S.history = [];
+  renderLearnPage();
+  renderHistory();
+  showToast("Historikk slettet","ok");
+}
+
+// ── Innstillinger-side ──
+function renderSettingsPage() {
+  document.getElementById("hystVal").textContent = settings.hysteresis.toFixed(1)+"°";
+  document.getElementById("hystUpperVal").textContent = (settings.hysteresis_upper||1.0).toFixed(1)+"°";
+  document.getElementById("restHoursVal").textContent = (settings.rest_after_hours||2.0).toFixed(1)+" t";
+}
+
+function setNormalFan(btn, speed) {
+  document.querySelectorAll(".fan-grid .fan-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  settings.normalFan = speed;
+    fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({normal_fan: speed})
+  }).then(()=>showToast("Normalinnstilling lagret ✓","ok")).catch(()=>showToast("Kunne ikke lagre","err"));
+}
+
+function adjSetting(key, delta) {
+  if (key==="hysteresis") {
+    settings.hysteresis = Math.round((settings.hysteresis + delta) * 10) / 10;
+    settings.hysteresis = Math.max(0.5, Math.min(3.0, settings.hysteresis));
+    document.getElementById("hystVal").textContent = settings.hysteresis.toFixed(1)+"°";
+  } else if (key==="hysteresis_upper") {
+    settings.hysteresis_upper = Math.round((settings.hysteresis_upper + delta) * 10) / 10;
+    settings.hysteresis_upper = Math.max(0.5, Math.min(5.0, settings.hysteresis_upper));
+    document.getElementById("hystUpperVal").textContent = settings.hysteresis_upper.toFixed(1)+"°";
+  } else if (key==="rest_after_hours") {
+    settings.rest_after_hours = Math.round((settings.rest_after_hours + delta) * 2) / 2;
+    settings.rest_after_hours = Math.max(0.5, Math.min(12.0, settings.rest_after_hours));
+    document.getElementById("restHoursVal").textContent = settings.rest_after_hours.toFixed(1)+" t";
+  }
+    // Send alle til server
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      hysteresis: settings.hysteresis,
+      hysteresis_upper: settings.hysteresis_upper,
+      rest_after_hours: settings.rest_after_hours
+    })
+  }).then(r=>r.json()).then(d=>{
+    if (d.ok) showToast("Innstilling lagret ✓","ok");
+  }).catch(()=>showToast("Kunne ikke lagre","err"));
+}
+
+// ── Toast ──
 function showToast(msg, type) {
-  const t = document.getElementById('toast');
+  const t = document.getElementById("toast");
   t.textContent = msg;
-  t.className = 'toast show ' + (type || '');
-  setTimeout(() => t.className = 'toast', 2500);
-}
-
-// ============================================================
-// NAV (placeholder)
-// ============================================================
-function showSection(s) {
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  event.target.closest('.nav-btn').classList.add('active');
-  // Enkel navigasjon — full implementasjon i neste versjon
-  if (s !== 'main') showToast('Kommer snart: ' + s);
+  t.className = "toast show"+(type?" "+type:"");
+  setTimeout(()=>t.className="toast",2500);
 }
 </script>
 </body>
