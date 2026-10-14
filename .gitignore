@@ -5,3 +5,4 @@ heat_history.csv
 nohup.out
 *.bak-*
 __pycache__/
+events.jsonl

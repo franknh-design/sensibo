@@ -12,6 +12,7 @@ import logging
 import threading
 import requests
 import csv
+from collections import deque
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -87,7 +88,69 @@ def sensibo_get(endpoint, params=None):
         log.error(f"Sensibo GET {endpoint}: {getattr(getattr(e, 'response', None), 'status_code', type(e).__name__)}")
         return None
 
-def sensibo_patch(uid, payload):
+# ============================================================
+# AKTIVITETSLOGG — hva pumpa gjør gjennom dagen (vises i appen)
+# ============================================================
+EVENTS_FILE = "events.jsonl"
+EVENTS_KEEP_DAYS = 30
+events = deque(maxlen=3000)
+events_lock = threading.Lock()
+
+FAN_NO = {"quiet": "stille", "low": "lav", "medium": "middels", "medium_high": "middels-høy",
+          "high": "høy", "auto": "auto", "strong": "kraftig"}
+
+def describe_ac(ac):
+    if not ac.get("on", True):
+        return "av"
+    parts = []
+    if ac.get("targetTemperature") is not None:
+        parts.append(f"{ac['targetTemperature']}°C")
+    if ac.get("fanLevel"):
+        parts.append(f"{FAN_NO.get(ac['fanLevel'], ac['fanLevel'])} vifte")
+    return " · ".join(parts) or "på"
+
+def add_event(kind, msg, **data):
+    """kind: pump | auto | schedule | external | status | setting | boost | error"""
+    ev = {"ts": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"), "kind": kind, "msg": msg}
+    if data:
+        ev["data"] = data
+    with events_lock:
+        events.append(ev)
+        try:
+            with open(EVENTS_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        except OSError as e:
+            log.error(f"Kunne ikke skrive aktivitetslogg: {e}")
+
+def load_events():
+    """Leser loggen fra disk og kaster det som er eldre enn EVENTS_KEEP_DAYS."""
+    if not os.path.exists(EVENTS_FILE):
+        return
+    cutoff = (datetime.now(LOCAL_TZ) - timedelta(days=EVENTS_KEEP_DAYS)).isoformat()
+    kept = []
+    with open(EVENTS_FILE, encoding="utf-8") as f:
+        for line in f:
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("ts", "") >= cutoff:
+                kept.append(ev)
+    kept = kept[-events.maxlen:]
+    events.extend(kept)
+    # Unngå dobbel timestatus rett etter omstart
+    for ev in reversed(kept):
+        if ev.get("kind") == "status":
+            cache["last_status_hour"] = ev["ts"][:13]
+            break
+    with open(EVENTS_FILE, "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(ev, ensure_ascii=False) + "\n" for ev in kept)
+
+def recent_events(hours=48, limit=500):
+    cutoff = (datetime.now(LOCAL_TZ) - timedelta(hours=hours)).isoformat()
+    return [ev for ev in list(events) if ev["ts"] >= cutoff][-limit:]
+
+def sensibo_patch(uid, payload, reason=""):
     """Sender kommando til Sensibo — hopper over hvis identisk med siste sendte kommando."""
     # Sjekk om kommandoen er identisk med siste sendte
     last = cache.get("last_command")
@@ -111,9 +174,11 @@ def sensibo_patch(uid, payload):
         r.raise_for_status()
         cache["last_command"] = dict(payload)
         log.info(f"Sensibo kommando sendt: {payload}")
+        add_event("pump", f"{reason or 'Kommando'}: pumpe → {describe_ac(payload)}", **payload)
         return r.json()
     except requests.HTTPError as e:
         log.error(f"Sensibo kommando avvist ({e.response.status_code}): {payload} → {e.response.text[:200]}")
+        add_event("error", f"Sensibo avviste kommando ({reason or 'kommando'}): {describe_ac(payload)}")
         return None
     except Exception as e:
         log.error(f"Sensibo kommando feilet: {type(e).__name__}")
@@ -138,6 +203,22 @@ def get_device_uid():
         return uid
     return None
 
+AC_KEYS = ("on", "mode", "targetTemperature", "fanLevel")
+
+def detect_external_change(ac):
+    """Logger endringer som ikke kom fra oss (fjernkontroll, Sensibo-appen, HA)."""
+    seen = {k: ac.get(k) for k in AC_KEYS}
+    prev = cache.get("ac_seen")
+    cache["ac_seen"] = seen
+    if prev is None or seen == prev:
+        return
+    ours = cache.get("last_command") or {}
+    if ours and all(seen.get(k) == v for k, v in ours.items() if k in AC_KEYS):
+        return  # vår egen kommando som nå er bekreftet
+    add_event("external", f"Endret utenfor appen: pumpe → {describe_ac(seen)}", **seen)
+    # Ellers ville duplikatsperren i sensibo_patch hindre oss i å sette tilbake samme verdi
+    cache["last_command"] = None
+
 def fetch_sensibo_state():
     """Henter AC-state og romsensor-temperatur i ett API-kall"""
     data = sensibo_get("/pods/YRqRonRH", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
@@ -145,6 +226,7 @@ def fetch_sensibo_state():
         return
     result = data.get("result", {})
     ac = result.get("acState", {})
+    detect_external_change(ac)
     cache["ac"] = ac
     cache["last_sensibo"] = time.time()
     check_boost_complete()
@@ -236,9 +318,10 @@ def check_boost_complete():
         if uid:
             normal_fan = cache.get("normal_fan", "medium_high")
             payload = {"on": True, "mode": "heat", "targetTemperature": target, "fanLevel": normal_fan}
-            result = sensibo_patch(uid, payload)
+            result = sensibo_patch(uid, payload, "Boost ferdig")
             if result:
                 cache["ac"].update(payload)
+                add_event("boost", f"Boost ferdig: {delta:.1f}°C på {elapsed:.0f} min")
                 log.info(f"Boost ferdig! {elapsed:.0f} min for {delta:.1f}°C → {target}°C, {normal_fan} vifte")
 
 def log_auto_heat_session(current):
@@ -259,6 +342,7 @@ def log_auto_heat_session(current):
         "min_per_deg": round(elapsed / delta, 2),
         "fan_speed": "high"
     })
+    add_event("auto", f"Oppvarmet {start['temp']:.1f} → {current:.1f}°C på {elapsed:.0f} min")
 
 def auto_feedback_check():
     """
@@ -294,7 +378,7 @@ def auto_feedback_check():
             log.debug(f"Auto oppvarming allerede aktiv ({current:.1f}°C < {target-hysteresis:.1f}°C)")
             return
         payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": wanted_fan}
-        result = sensibo_patch(uid, payload)
+        result = sensibo_patch(uid, payload, f"Auto oppvarming (rom {current:.1f}°C)")
         if result:
             cache["ac"].update(payload)
             cache["auto_heat_start"] = {"temp": current, "time": time.time(), "outdoor": cache.get("outdoor_temp")}
@@ -308,7 +392,7 @@ def auto_feedback_check():
             log.debug(f"Auto holder temp ({current:.1f}°C ≥ {target-hysteresis:.1f}°C)")
             return
         payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": wanted_fan}
-        result = sensibo_patch(uid, payload)
+        result = sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C)")
         if result:
             cache["ac"].update(payload)
             log.info(f"Auto HOLDER: {current:.1f}°C ≥ {target-hysteresis:.1f}°C | {target}°C + {NORMAL_FAN} vifte")
@@ -361,7 +445,19 @@ def schedule_check():
     cache["auto_target_temp"] = max(16, min(30, temp))
     save_state()
     log.info(f"Timeplan {at:%a %H:%M}: ønsket temp → {cache['auto_target_temp']}°C")
+    add_event("schedule", f"Timeplan {at:%H:%M}: ønsket temp → {cache['auto_target_temp']:g}°C")
     cache["last_sensibo"] = 0  # hent status og la auto-styringen reagere med en gang
+
+def hourly_status():
+    """Ett øyeblikksbilde i timen: rom, ute og hva pumpa står på."""
+    hour = datetime.now(LOCAL_TZ).strftime("%Y-%m-%dT%H")
+    if cache.get("last_status_hour") == hour or cache.get("temperature") is None:
+        return
+    cache["last_status_hour"] = hour
+    room, out, ac = cache.get("temperature"), cache.get("outdoor_temp"), cache.get("ac", {})
+    out_txt = f" · ute {out:.1f}°C" if out is not None else ""
+    add_event("status", f"Rom {room:.1f}°C{out_txt} · pumpe {describe_ac(ac)}",
+              room=room, outdoor=out, **{k: ac.get(k) for k in AC_KEYS})
 
 def background_loop():
     while True:
@@ -374,6 +470,10 @@ def background_loop():
             fetch_sensibo_state()
         if now - cache["last_metno"] > 1800:  # 30 min
             fetch_metno()
+        try:
+            hourly_status()
+        except Exception as e:
+            log.error(f"Timestatus-feil: {e}")
         time.sleep(60)
 
 # ============================================================
@@ -587,6 +687,7 @@ class Handler(BaseHTTPRequestHandler):
                 "rest_after_hours": cache.get("rest_after_hours", 2.0),
                 "cooling_phase": cache.get("cooling_phase"),
                 "boost_active": cache.get("boost_active", False),
+                "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
             })
 
@@ -616,6 +717,8 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/api/settings":
             if "auto_enabled" in body:
+                if cache["auto_enabled"] != bool(body["auto_enabled"]):
+                    add_event("setting", f"Auto slått {'på' if body['auto_enabled'] else 'av'} i appen")
                 cache["auto_enabled"] = bool(body["auto_enabled"])
                 log.info(f"Auto: {'PÅ' if cache['auto_enabled'] else 'AV'}")
             if "normal_fan" in body:
@@ -627,8 +730,12 @@ class Handler(BaseHTTPRequestHandler):
             if "schedules" in body:
                 cache["schedules"] = body["schedules"]
                 log.info(f"Timeplan oppdatert: {len(cache['schedules'])} tidspunkter")
+                add_event("setting", f"Timeplan endret ({len(cache['schedules'])} tidspunkter)")
             if "target_temp" in body:
-                cache["auto_target_temp"] = max(16, min(30, float(body["target_temp"])))
+                new_t = max(16, min(30, float(body["target_temp"])))
+                if new_t != cache.get("auto_target_temp"):
+                    add_event("setting", f"Ønsket temp satt til {new_t:g}°C i appen")
+                cache["auto_target_temp"] = new_t
                 log.info(f"Ønsket temp satt til {cache['auto_target_temp']}°C")
             if "hysteresis" in body:
                 cache["hysteresis"] = max(0.5, min(3.0, float(body["hysteresis"])))
@@ -665,7 +772,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if cmd_type == "power":
             payload = {"on": cmd["on"]}
-            result = sensibo_patch(uid, payload)
+            result = sensibo_patch(uid, payload, "Manuelt i appen")
             if result:
                 cache["ac"]["on"] = cmd["on"]
                 log.info(f"Kraft: {'På' if cmd['on'] else 'Av'}")
@@ -683,7 +790,7 @@ class Handler(BaseHTTPRequestHandler):
                 "targetTemperature": cmd.get("targetTemperature", 22),
                 "fanLevel": cmd.get("fanLevel", "medium"),
             }
-            result = sensibo_patch(uid, payload)
+            result = sensibo_patch(uid, payload, "Manuelt i appen")
             if result:
                 cache["ac"].update(payload)
                 log.info(f"Manuell: {payload}")
@@ -701,7 +808,7 @@ class Handler(BaseHTTPRequestHandler):
                 outdoor = cache.get("outdoor_temp")
                 settings = calculate_optimal_settings(target, outdoor)
                 settings["on"] = True
-                result = sensibo_patch(uid, settings)
+                result = sensibo_patch(uid, settings, f"Auto slått på (mål {target}°C)")
                 if result:
                     cache["ac"].update(settings)
                     pred = predict_heatup(target, outdoor)
@@ -710,6 +817,7 @@ class Handler(BaseHTTPRequestHandler):
                 return {"ok": False, "error": "Sensibo svarte ikke"}
             else:
                 log.info("Auto AV")
+                add_event("setting", "Auto slått av")
                 return {"ok": True}
 
         elif cmd_type == "boost":
@@ -719,7 +827,7 @@ class Handler(BaseHTTPRequestHandler):
             cache["boost_start_temp"] = cache.get("temperature")
             cache["boost_start_time"] = time.time()
             payload = {"on": True, "mode": "heat", "targetTemperature": 30, "fanLevel": "high"}
-            result = sensibo_patch(uid, payload)
+            result = sensibo_patch(uid, payload, f"Boost startet (mål {target}°C)")
             if result:
                 cache["ac"].update(payload)
                 log.info(f"Boost aktivert: 30°C, høy vifte → mål {target}°C")
@@ -745,6 +853,8 @@ if __name__ == "__main__":
 
     # Last lagret state fra disk
     load_state()
+    load_events()
+    add_event("setting", "Varme-serveren startet")
 
     # Initial data-henting
     fetch_sensibo_state()

@@ -150,6 +150,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .log-time{color:var(--accent);white-space:nowrap;min-width:44px}
 .log-ok{color:var(--accent)}
 .log-warn{color:var(--warm)}
+.log-list{max-height:420px;overflow-y:auto;gap:4px;scrollbar-width:thin;scrollbar-color:var(--surface2) transparent;padding-right:2px}
+.log-list::-webkit-scrollbar{width:6px} .log-list::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:3px}
+.log-list .log-item{padding:6px 10px}
+.log-day{font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);padding:10px 4px 2px}
+.log-day:first-child{padding-top:0}
+.log-item .log-tag{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;padding:1px 6px;border-radius:5px;border:1px solid var(--border);white-space:nowrap;margin-left:auto}
+.log-k-pump{color:var(--accent)} .log-k-auto{color:var(--accent)} .log-k-boost{color:var(--warm)}
+.log-k-schedule{color:var(--accent3)} .log-k-external{color:var(--warm)} .log-k-error{color:var(--danger)}
+.log-k-status{color:var(--muted)} .log-k-setting{color:var(--text)}
 
 /* Toast */
 .toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--text);z-index:100;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
@@ -383,7 +392,7 @@ input[type=time]{color-scheme:dark}
   <div class="log-section">
     <div class="log-title">Aktivitetslogg</div>
     <div class="log-list" id="logList">
-      <div class="log-item"><span class="log-time">—</span><span>Starter...</span></div>
+      <div class="log-item"><span class="log-time">—</span><span>Henter logg …</span></div>
     </div>
   </div>
 
@@ -592,6 +601,7 @@ async function fetchStatus() {
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     applyStatus(d);
+    if (d.events) renderEvents(d.events);
     setOnline(true);
   } catch(e) {
     setOnline(false);
@@ -966,7 +976,45 @@ function drawChart(vals) {
 }
 
 // ── Log ──
+// Serveren fører loggen (auto, timeplan, endringer utenfra, timestatus) — appen viser den.
+const LOG_TAGS = {pump:"pumpe", auto:"auto", boost:"boost", schedule:"timeplan",
+  external:"utenfra", error:"feil", status:"status", setting:"innstilling"};
+const escHtml = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function dayLabel(d) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const day = new Date(d); day.setHours(0,0,0,0);
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return "I dag";
+  if (diff === 1) return "I går";
+  return d.toLocaleDateString("no-NO",{weekday:"long",day:"numeric",month:"short"});
+}
+
+function renderEvents(evs) {
+  const list = document.getElementById("logList");
+  if (!evs.length) {
+    list.innerHTML = '<div class="log-item"><span class="log-time">—</span><span>Ingen hendelser ennå</span></div>';
+    return;
+  }
+  let html = "", lastDay = "";
+  [...evs].reverse().forEach(ev => {
+    const d = new Date(ev.ts);
+    const day = dayLabel(d);
+    if (day !== lastDay) { html += `<div class="log-day">${day}</div>`; lastDay = day; }
+    const t = d.toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
+    const k = LOG_TAGS[ev.kind] ? ev.kind : "setting";
+    html += `<div class="log-item"><span class="log-time">${t}</span>`
+      + `<span class="${ev.kind==="status"?"":"log-k-"+k}">${escHtml(ev.msg)}</span>`
+      + `<span class="log-tag log-k-${k}">${LOG_TAGS[k]}</span></div>`;
+  });
+  list.innerHTML = html;
+}
+
+let _logRefresh = null;
 function addLog(msg, type) {
+  // Hent serverloggen like etter en handling, så den bekreftede hendelsen dukker opp
+  clearTimeout(_logRefresh);
+  _logRefresh = setTimeout(fetchStatus, 2500);
   const list = document.getElementById("logList");
   const t = new Date().toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
   const cls = type==="ok"?"log-ok":type==="warn"?"log-warn":"";
@@ -974,7 +1022,6 @@ function addLog(msg, type) {
   item.className = "log-item fade-in";
   item.innerHTML = `<span class="log-time">${t}</span><span class="${cls}">${msg}</span>`;
   list.insertBefore(item,list.firstChild);
-  while(list.children.length>12) list.removeChild(list.lastChild);
 }
 
 // ── Navigasjon ──
