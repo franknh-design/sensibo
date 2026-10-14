@@ -150,6 +150,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .log-time{color:var(--accent);white-space:nowrap;min-width:44px}
 .log-ok{color:var(--accent)}
 .log-warn{color:var(--warm)}
+.log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.log-head .log-title{margin-bottom:0}
+.log-filter{display:flex;gap:4px}
+.log-filter button{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer}
+.log-filter button.on{color:var(--accent);border-color:rgba(0,212,170,0.35)}
+.log-k-fan{color:var(--warm)}
 .log-list{max-height:420px;overflow-y:auto;gap:4px;scrollbar-width:thin;scrollbar-color:var(--surface2) transparent;padding-right:2px}
 .log-list::-webkit-scrollbar{width:6px} .log-list::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:3px}
 .log-list .log-item{padding:6px 10px}
@@ -390,7 +396,12 @@ input[type=time]{color-scheme:dark}
 
   <!-- Log -->
   <div class="log-section">
-    <div class="log-title">Aktivitetslogg</div>
+    <div class="log-head">
+      <div class="log-title">Aktivitetslogg</div>
+      <div class="log-filter" id="logFilter">
+        <button data-f="all">Alt</button><button data-f="fan">Vifte</button><button data-f="pump">Pumpe</button>
+      </div>
+    </div>
     <div class="log-list" id="logList">
       <div class="log-item"><span class="log-time">—</span><span>Henter logg …</span></div>
     </div>
@@ -990,10 +1001,28 @@ function dayLabel(d) {
   return d.toLocaleDateString("no-NO",{weekday:"long",day:"numeric",month:"short"});
 }
 
+// Viftendring = melding med «vifte X → Y» (settes av serveren ved hver kommando/endring utenfra)
+const isFanChange = ev => /vifte \S+ → /.test(ev.msg);
+let logFilter = "all", lastEvents = [];
+try { logFilter = localStorage.getItem("logFilter") || "all"; } catch(e) {}
+
+function setLogFilter(f) {
+  logFilter = f;
+  try { localStorage.setItem("logFilter", f); } catch(e) {}
+  renderEvents(lastEvents);
+}
+
 function renderEvents(evs) {
+  lastEvents = evs;
+  document.querySelectorAll("#logFilter button").forEach(b => {
+    b.classList.toggle("on", b.dataset.f === logFilter);
+    b.onclick = () => setLogFilter(b.dataset.f);
+  });
+  if (logFilter === "fan") evs = evs.filter(isFanChange);
+  else if (logFilter === "pump") evs = evs.filter(e => ["pump","external","boost","auto","schedule","error"].includes(e.kind));
   const list = document.getElementById("logList");
   if (!evs.length) {
-    list.innerHTML = '<div class="log-item"><span class="log-time">—</span><span>Ingen hendelser ennå</span></div>';
+    list.innerHTML = `<div class="log-item"><span class="log-time">—</span><span>${logFilter==="all"?"Ingen hendelser ennå":"Ingen slike hendelser siste 48 t"}</span></div>`;
     return;
   }
   let html = "", lastDay = "";
@@ -1003,9 +1032,12 @@ function renderEvents(evs) {
     if (day !== lastDay) { html += `<div class="log-day">${day}</div>`; lastDay = day; }
     const t = d.toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
     const k = LOG_TAGS[ev.kind] ? ev.kind : "setting";
+    const fan = isFanChange(ev);
+    const tagK = fan && ev.kind === "pump" ? "fan" : k;
+    const tagTxt = fan && ev.kind === "pump" ? "vifte" : LOG_TAGS[k];
     html += `<div class="log-item"><span class="log-time">${t}</span>`
       + `<span class="${ev.kind==="status"?"":"log-k-"+k}">${escHtml(ev.msg)}</span>`
-      + `<span class="log-tag log-k-${k}">${LOG_TAGS[k]}</span></div>`;
+      + `<span class="log-tag log-k-${tagK}">${tagTxt}</span></div>`;
   });
   list.innerHTML = html;
 }

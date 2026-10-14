@@ -109,6 +109,22 @@ def describe_ac(ac):
         parts.append(f"{FAN_NO.get(ac['fanLevel'], ac['fanLevel'])} vifte")
     return " · ".join(parts) or "på"
 
+def describe_change(prev, new):
+    """Hva som endret seg, f.eks. «vifte middels-høy → høy · 24 → 30°C». None hvis ingenting."""
+    prev = prev or {}
+    if "on" in new and bool(new["on"]) != bool(prev.get("on", True)):
+        return "slått på · " + describe_ac(new) if new["on"] else "slått av"
+    if new.get("on") is False:
+        return None
+    parts = []
+    pf, nf = prev.get("fanLevel"), new.get("fanLevel")
+    if nf and nf != pf:
+        parts.append(f"vifte {FAN_NO.get(pf, pf or '?')} → {FAN_NO.get(nf, nf)}")
+    pt, nt = prev.get("targetTemperature"), new.get("targetTemperature")
+    if nt is not None and nt != pt:
+        parts.append(f"{pt if pt is not None else '?'} → {nt}°C")
+    return " · ".join(parts) or None
+
 def add_event(kind, msg, **data):
     """kind: pump | auto | schedule | external | status | setting | boost | error"""
     ev = {"ts": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"), "kind": kind, "msg": msg}
@@ -164,6 +180,7 @@ def sensibo_patch(uid, payload, reason=""):
     if "targetTemperature" in payload:
         payload = {**payload, "targetTemperature": int(round(float(payload["targetTemperature"])))}
 
+    prev_ac = dict(cache.get("ac") or {})
     try:
         r = requests.post(
             f"{SENSIBO_BASE}/pods/{uid}/acStates",
@@ -174,7 +191,8 @@ def sensibo_patch(uid, payload, reason=""):
         r.raise_for_status()
         cache["last_command"] = dict(payload)
         log.info(f"Sensibo kommando sendt: {payload}")
-        add_event("pump", f"{reason or 'Kommando'}: pumpe → {describe_ac(payload)}", **payload)
+        change = describe_change(prev_ac, payload) or f"pumpe → {describe_ac(payload)}"
+        add_event("pump", f"{reason or 'Kommando'}: {change}", **payload)
         return r.json()
     except requests.HTTPError as e:
         log.error(f"Sensibo kommando avvist ({e.response.status_code}): {payload} → {e.response.text[:200]}")
@@ -215,7 +233,8 @@ def detect_external_change(ac):
     ours = cache.get("last_command") or {}
     if ours and all(seen.get(k) == v for k, v in ours.items() if k in AC_KEYS):
         return  # vår egen kommando som nå er bekreftet
-    add_event("external", f"Endret utenfor appen: pumpe → {describe_ac(seen)}", **seen)
+    change = describe_change(prev, seen) or f"pumpe → {describe_ac(seen)}"
+    add_event("external", f"Endret utenfor appen: {change}", **seen)
     # Ellers ville duplikatsperren i sensibo_patch hindre oss i å sette tilbake samme verdi
     cache["last_command"] = None
 
