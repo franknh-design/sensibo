@@ -698,6 +698,8 @@ function applyStatus(d) {
     document.getElementById("fanEl").textContent = FAN_LABELS[d.ac.fanLevel] || d.ac.fanLevel || "—";
     // Vis faktisk AC-temp i innstilt-kortet
     const acTemp = d.ac.targetTemperature;
+    S.pausedUntil = d.auto_paused_until || null;
+    updateAutoToggleUI();
     const boostActive = d.boost_active;
     document.getElementById("targetCardEl").textContent = acTemp+"°";
     document.getElementById("targetCardSub").textContent = boostActive ? "⚡ boost" : S.autoEnabled ? "auto" : "manuell";
@@ -759,7 +761,11 @@ function toggleAuto() {
 function updateAutoToggleUI() {
   const title = document.getElementById("autoToggleTitle");
   const sub = document.getElementById("autoToggleSub");
-  if (S.autoEnabled) {
+  if (S.autoEnabled && S.pausedUntil) {
+    const til = new Date(S.pausedUntil*1000).toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
+    title.textContent = "⏸ Auto pauset";
+    sub.textContent = `Endret utenfor appen · fortsetter senest ${til}`;
+  } else if (S.autoEnabled) {
     title.textContent = S.autoPhase==="varmer"?"⚡ Varmer opp":"✓ Holder temperatur";
     sub.textContent = S.autoPhase==="varmer"?`30°C · høy vifte`:`${S.targetTemp}°C · mid-høy vifte`;
   } else {

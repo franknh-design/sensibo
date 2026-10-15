@@ -223,12 +223,28 @@ def get_device_uid():
 
 AC_KEYS = ("on", "mode", "targetTemperature", "fanLevel")
 
+EXTERNAL_PAUSE_HOURS = 3
+
+def resume_from_pause(why):
+    if cache.get("external_pause_until"):
+        cache["external_pause_until"] = None
+        add_event("auto", f"Auto fortsetter ({why})")
+
 def detect_external_change(ac):
-    """Logger endringer som ikke kom fra oss (fjernkontroll, Sensibo-appen, HA)."""
+    """Logger endringer som ikke kom fra oss (fjernkontroll, Sensibo-appen, HA) og pauser
+    auto-styringen, så vi ikke sloss mot f.eks. HA-automasjonen for verandadøra (16 °C ved åpen dør).
+    Auto gjenopptas ved neste endring utenfra (HA setter tilbake når døra lukkes) eller etter 3 t."""
     seen = {k: ac.get(k) for k in AC_KEYS}
     prev = cache.get("ac_seen")
     cache["ac_seen"] = seen
     if prev is None or seen == prev:
+        return
+    if cache.get("external_pause_until"):
+        cache["external_pause_until"] = None
+        cache["last_command"] = None
+        change = describe_change(prev, seen) or f"pumpe → {describe_ac(seen)}"
+        add_event("external", f"Endret utenfor appen: {change}", **seen)
+        add_event("auto", "Auto fortsetter (pumpa ble endret tilbake utenfor appen)")
         return
     ours = cache.get("last_command") or {}
     if ours and all(seen.get(k) == v for k, v in ours.items() if k in AC_KEYS):
@@ -237,6 +253,10 @@ def detect_external_change(ac):
     add_event("external", f"Endret utenfor appen: {change}", **seen)
     # Ellers ville duplikatsperren i sensibo_patch hindre oss i å sette tilbake samme verdi
     cache["last_command"] = None
+    if cache.get("auto_enabled"):
+        cache["external_pause_until"] = time.time() + EXTERNAL_PAUSE_HOURS * 3600
+        cache.pop("auto_heat_start", None)
+        add_event("auto", f"Auto pauset (endret utenfor appen) — fortsetter når pumpa endres igjen, senest om {EXTERNAL_PAUSE_HOURS} t")
 
 def fetch_sensibo_state():
     """Henter AC-state og romsensor-temperatur i ett API-kall"""
@@ -375,6 +395,12 @@ def auto_feedback_check():
         return
     if cache.get("boost_active"):
         return  # Boost kjører — auto pauset
+    pause = cache.get("external_pause_until")
+    if pause:
+        if time.time() < pause:
+            return
+        cache["external_pause_until"] = None
+        add_event("auto", f"Auto fortsetter etter {EXTERNAL_PAUSE_HOURS} t pause")
     current = cache.get("temperature")
     if current is None:
         return
@@ -706,6 +732,7 @@ class Handler(BaseHTTPRequestHandler):
                 "rest_after_hours": cache.get("rest_after_hours", 2.0),
                 "cooling_phase": cache.get("cooling_phase"),
                 "boost_active": cache.get("boost_active", False),
+                "auto_paused_until": cache.get("external_pause_until"),
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
             })
@@ -750,6 +777,8 @@ class Handler(BaseHTTPRequestHandler):
                 cache["schedules"] = body["schedules"]
                 log.info(f"Timeplan oppdatert: {len(cache['schedules'])} tidspunkter")
                 add_event("setting", f"Timeplan endret ({len(cache['schedules'])} tidspunkter)")
+            if "target_temp" in body or body.get("auto_enabled"):
+                resume_from_pause("endring i appen")
             if "target_temp" in body:
                 new_t = max(16, min(30, float(body["target_temp"])))
                 if new_t != cache.get("auto_target_temp"):
@@ -788,6 +817,7 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": False, "error": "Finner ikke Sensibo-enhet"}
 
         cmd_type = cmd.get("type")
+        resume_from_pause("handling i appen")
 
         if cmd_type == "power":
             payload = {"on": cmd["on"]}
