@@ -30,6 +30,8 @@ SENSIBO_DEVICE_UID = os.getenv("SENSIBO_DEVICE_UID", "YRqRonRH")  # Hardkodet ri
 METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
 METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8765"))
+# Kun localhost — Cloudflare-tunnelen er eneste vei inn (0.0.0.0 ga åpen styring fra hele nettet)
+SERVER_HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 LOG_FILE = "heat_history.csv"
 STATE_FILE = "state.json"
 
@@ -383,13 +385,21 @@ def log_auto_heat_session(current):
     })
     add_event("auto", f"Oppvarmet {start['temp']:.1f} → {current:.1f}°C på {elapsed:.0f} min")
 
+# Holdemodus: pumpa måler ved egen sensor (oppe på veggen) og demper seg før rommet er varmt nok.
+# Derfor settes den til mål + et påslag som justerer seg selv, i stedet for å sykle 30 °C/høy vifte.
+HOLD_OFFSET_MIN, HOLD_OFFSET_MAX = -1, 3
+HOLD_ADJUST_EVERY = 30 * 60      # maks én justering av påslaget per halvtime (hver kommando piper)
+HOLD_LOW, HOLD_HIGH = 0.4, 0.6   # rom under mål−0,4 → påslag +1; over mål+0,6 → påslag −1
+HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
+
+def _is_heating(ac):
+    return ac.get("on") and ac.get("targetTemperature") == 30 and ac.get("fanLevel") == "high"
+
 def auto_feedback_check():
     """
-    To tilstander:
-    1. Oppvarming: romtemp < ønsket - hysteresis → 30C + høy vifte
-    2. Holde:      romtemp >= ønsket - hysteresis → ønsket temp + mid-høy vifte
-
-    Sender kun kommando hvis innstillingen faktisk er annerledes enn det som kjører.
+    1. Oppvarming: romtemp < mål − hysteresis → 30 °C + høy vifte, til rommet er mål − 0,3.
+    2. Holde:      pumpa på mål + påslag (selvjusterende) + normalvifte.
+    Sender kun kommando når innstillingen faktisk må endres.
     """
     if not cache["auto_enabled"]:
         return
@@ -408,39 +418,77 @@ def auto_feedback_check():
     target = cache["auto_target_temp"]
     hysteresis = cache.get("hysteresis", 1.0)
     ac = cache.get("ac", {})
-    ac_temp = ac.get("targetTemperature", 22)
-    ac_fan = ac.get("fanLevel", NORMAL_FAN)
-    ac_on = ac.get("on", False)
+    normal_fan = cache.get("normal_fan", NORMAL_FAN)
     uid = get_device_uid()
     if not uid:
         return
 
-    if current < target - hysteresis:
-        # OPPVARMING — trenger full trøkk
-        wanted_temp = 30
-        wanted_fan = "high"
-        if ac_on and ac_temp == wanted_temp and ac_fan == wanted_fan:
-            log.debug(f"Auto oppvarming allerede aktiv ({current:.1f}°C < {target-hysteresis:.1f}°C)")
+    heating = _is_heating(ac)
+    if current < target - hysteresis or (heating and current < target - HEAT_STOP_BELOW):
+        if heating:
             return
-        payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": wanted_fan}
-        result = sensibo_patch(uid, payload, f"Auto oppvarming (rom {current:.1f}°C)")
-        if result:
+        # Holdet var ikke nok — neste hold skal ligge høyere
+        offset = min(HOLD_OFFSET_MAX, cache.get("hold_offset", 1) + 1)
+        if offset != cache.get("hold_offset", 1):
+            cache["hold_offset"] = offset
+            save_state()
+        payload = {"on": True, "mode": "heat", "targetTemperature": 30, "fanLevel": "high"}
+        if sensibo_patch(uid, payload, f"Auto oppvarming (rom {current:.1f}°C, mål {target:g}°C)"):
             cache["ac"].update(payload)
             cache["auto_heat_start"] = {"temp": current, "time": time.time(), "outdoor": cache.get("outdoor_temp")}
-            log.info(f"Auto OPPVARMING: {current:.1f}°C → mål {target}°C (hysteresis {hysteresis}°C) | 30°C + høy vifte")
+            log.info(f"Auto OPPVARMING: {current:.1f}°C < {target - hysteresis:.1f}°C | 30°C + høy vifte")
+        return
+
+    log_auto_heat_session(current)
+    # HOLDE — juster påslaget sakte etter hvordan rommet faktisk ligger
+    offset = cache.get("hold_offset", 1)
+    now = time.time()
+    if not heating and now - cache.get("hold_adjusted_at", 0) >= HOLD_ADJUST_EVERY:
+        new = offset
+        if current < target - HOLD_LOW:
+            new = min(HOLD_OFFSET_MAX, offset + 1)
+        elif current > target + HOLD_HIGH:
+            new = max(HOLD_OFFSET_MIN, offset - 1)
+        if new != offset:
+            cache["hold_offset"] = offset = new
+            cache["hold_adjusted_at"] = now
+            save_state()
+    wanted_temp = int(round(target + offset))
+    if ac.get("on") and ac.get("targetTemperature") == wanted_temp and ac.get("fanLevel") == normal_fan:
+        return
+    payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": normal_fan}
+    if sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C, mål {target:g}°C)"):
+        cache["ac"].update(payload)
+        cache["hold_adjusted_at"] = now
+        log.info(f"Auto HOLDER: rom {current:.1f}°C, mål {target}°C | pumpe {wanted_temp}°C (påslag {offset:+d})")
+
+# ============================================================
+# MÅL ETTER UTETEMPERATUR
+# ============================================================
+OUTDOOR_RULE_DEFAULT = {"enabled": True, "threshold": 5.0, "warm_temp": 23.0, "cold_temp": 24.0}
+OUTDOOR_RULE_BAND = 0.5  # bytt til «kaldt» under 4,5 °C, tilbake til «varmt» fra 5,0 °C
+
+def outdoor_rule_check(force=False):
+    """Setter ønsket temp etter utetemperaturen når den krysser terskelen (eller når regelen slås på).
+    Ett utslag per bytte, så timeplan/manuelle endringer står seg til neste bytte."""
+    rule = {**OUTDOOR_RULE_DEFAULT, **(cache.get("outdoor_rule") or {})}
+    out = cache.get("outdoor_temp")
+    if not rule["enabled"] or out is None:
+        return
+    prev = cache.get("outdoor_bracket")
+    if prev == "cold":
+        bracket = "warm" if out >= rule["threshold"] else "cold"
     else:
-        log_auto_heat_session(current)
-        # HOLDE — normalinnstilling
-        wanted_temp = target
-        wanted_fan = NORMAL_FAN
-        if ac_on and ac_temp == wanted_temp and ac_fan == wanted_fan:
-            log.debug(f"Auto holder temp ({current:.1f}°C ≥ {target-hysteresis:.1f}°C)")
-            return
-        payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": wanted_fan}
-        result = sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C)")
-        if result:
-            cache["ac"].update(payload)
-            log.info(f"Auto HOLDER: {current:.1f}°C ≥ {target-hysteresis:.1f}°C | {target}°C + {NORMAL_FAN} vifte")
+        bracket = "cold" if out < rule["threshold"] - OUTDOOR_RULE_BAND else "warm"
+    if bracket == prev and not force:
+        return
+    cache["outdoor_bracket"] = bracket
+    temp = rule["warm_temp"] if bracket == "warm" else rule["cold_temp"]
+    if cache.get("auto_target_temp") != temp:
+        cache["auto_target_temp"] = temp
+        add_event("setting", f"Ute {out:.1f}°C → ønsket temp {temp:g}°C")
+        cache["last_sensibo"] = 0
+    save_state()
 
 # ============================================================
 # BACKGROUND REFRESH
@@ -516,6 +564,10 @@ def background_loop():
         if now - cache["last_metno"] > 1800:  # 30 min
             fetch_metno()
         try:
+            outdoor_rule_check()
+        except Exception as e:
+            log.error(f"Utetemp-regel-feil: {e}")
+        try:
             hourly_status()
         except Exception as e:
             log.error(f"Timestatus-feil: {e}")
@@ -556,7 +608,7 @@ def load_history():
 STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "hysteresis_upper",
     "rest_after_hours", "normal_fan", "boost_temp", "schedules",
-    "last_schedule_key"
+    "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket"
 ]
 
 def save_state():
@@ -733,6 +785,8 @@ class Handler(BaseHTTPRequestHandler):
                 "cooling_phase": cache.get("cooling_phase"),
                 "boost_active": cache.get("boost_active", False),
                 "auto_paused_until": cache.get("external_pause_until"),
+                "hold_offset": cache.get("hold_offset", 1),
+                "outdoor_rule": {**OUTDOOR_RULE_DEFAULT, **(cache.get("outdoor_rule") or {})},
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
             })
@@ -777,6 +831,16 @@ class Handler(BaseHTTPRequestHandler):
                 cache["schedules"] = body["schedules"]
                 log.info(f"Timeplan oppdatert: {len(cache['schedules'])} tidspunkter")
                 add_event("setting", f"Timeplan endret ({len(cache['schedules'])} tidspunkter)")
+            if "outdoor_rule" in body and isinstance(body["outdoor_rule"], dict):
+                r = body["outdoor_rule"]
+                cache["outdoor_rule"] = {
+                    "enabled": bool(r.get("enabled", True)),
+                    "threshold": max(-20, min(20, float(r.get("threshold", 5)))),
+                    "warm_temp": max(16, min(28, float(r.get("warm_temp", 23)))),
+                    "cold_temp": max(16, min(28, float(r.get("cold_temp", 24)))),
+                }
+                add_event("setting", "Mål etter utetemp " + ("på" if cache["outdoor_rule"]["enabled"] else "av"))
+                outdoor_rule_check(force=True)
             if "target_temp" in body or body.get("auto_enabled"):
                 resume_from_pause("endring i appen")
             if "target_temp" in body:
@@ -914,8 +978,8 @@ if __name__ == "__main__":
     t.start()
 
     # Start web server
-    server = HTTPServer(("0.0.0.0", SERVER_PORT), Handler)
-    log.info(f"Server kjører på http://0.0.0.0:{SERVER_PORT}")
+    server = HTTPServer((SERVER_HOST, SERVER_PORT), Handler)
+    log.info(f"Server kjører på http://{SERVER_HOST}:{SERVER_PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

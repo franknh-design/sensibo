@@ -150,6 +150,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .log-time{color:var(--accent);white-space:nowrap;min-width:44px}
 .log-ok{color:var(--accent)}
 .log-warn{color:var(--warm)}
+.rule-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.rule-btn{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+.rule-btn.on{color:var(--accent);border-color:rgba(0,212,170,0.35)}
 .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .log-head .log-title{margin-bottom:0}
 .log-filter{display:flex;gap:4px}
@@ -265,9 +268,16 @@ input[type=time]{color-scheme:dark}
       <div class="info-box">
         <div class="info-box-title">Dynamisk justering</div>
         <div class="info-box-content">
-          ✓ Starter med <strong style="color:var(--text)">30°C + høy vifte</strong> ved stor delta<br>
-          ✓ Justerer til <strong style="color:var(--text)">mid-høy vifte</strong> når temp nås<br>
-          ✓ Øker automatisk igjen hvis temp faller
+          ✓ <strong style="color:var(--text)">30°C + høy vifte</strong> bare når rommet er over 1° under målet<br>
+          ✓ Ellers holder pumpa rommet selv på <strong style="color:var(--text)">mål <span id="holdOffsetEl">+1</span>°</strong> (justerer seg selv, maks hver halvtime)<br>
+          ✓ Pauser når pumpa endres utenfor appen (f.eks. verandadøra)
+        </div>
+        <div class="rule-row">
+          <div>
+            <div style="color:var(--text);font-size:12px">Mål etter utetemperatur</div>
+            <div style="font-size:10px;color:var(--muted)" id="outdoorRuleTxt">23° når ≥5° ute · 24° når kaldere</div>
+          </div>
+          <button class="rule-btn" id="outdoorRuleBtn" onclick="toggleOutdoorRule()">PÅ</button>
         </div>
       </div>
       <div>
@@ -699,6 +709,12 @@ function applyStatus(d) {
     // Vis faktisk AC-temp i innstilt-kortet
     const acTemp = d.ac.targetTemperature;
     S.pausedUntil = d.auto_paused_until || null;
+    S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
+    if (d.outdoor_rule) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.hold_offset != null) {
+      const ho = document.getElementById("holdOffsetEl");
+      if (ho) ho.textContent = (d.hold_offset >= 0 ? "+" : "") + d.hold_offset;
+    }
     updateAutoToggleUI();
     const boostActive = d.boost_active;
     document.getElementById("targetCardEl").textContent = acTemp+"°";
@@ -758,6 +774,26 @@ function toggleAuto() {
   updateAutoToggleUI();
 }
 
+function renderOutdoorRule() {
+  const r = S.outdoorRule; if (!r) return;
+  const btn = document.getElementById("outdoorRuleBtn");
+  btn.textContent = r.enabled ? "PÅ" : "AV";
+  btn.classList.toggle("on", r.enabled);
+  document.getElementById("outdoorRuleTxt").textContent =
+    `${r.warm_temp}° når ≥${r.threshold}° ute · ${r.cold_temp}° når kaldere`;
+}
+
+function toggleOutdoorRule() {
+  if (!S.outdoorRule) return;
+  S.outdoorRule = {...S.outdoorRule, enabled: !S.outdoorRule.enabled};
+  renderOutdoorRule();
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({outdoor_rule: S.outdoorRule})
+  }).then(() => setTimeout(fetchStatus, 1500)).catch(()=>{});
+  showToast(S.outdoorRule.enabled ? "Mål etter utetemp på" : "Mål etter utetemp av", "ok");
+}
+
 function updateAutoToggleUI() {
   const title = document.getElementById("autoToggleTitle");
   const sub = document.getElementById("autoToggleSub");
@@ -767,7 +803,7 @@ function updateAutoToggleUI() {
     sub.textContent = `Endret utenfor appen · fortsetter senest ${til}`;
   } else if (S.autoEnabled) {
     title.textContent = S.autoPhase==="varmer"?"⚡ Varmer opp":"✓ Holder temperatur";
-    sub.textContent = S.autoPhase==="varmer"?`30°C · høy vifte`:`${S.targetTemp}°C · mid-høy vifte`;
+    sub.textContent = S.autoPhase==="varmer"?`30°C · høy vifte`:`mål ${S.targetTemp}°C · mid-høy vifte`;
   } else {
     title.textContent = "Auto-styring";
     sub.textContent = "Trykk for å aktivere";
