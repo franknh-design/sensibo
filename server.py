@@ -404,7 +404,7 @@ def log_auto_heat_session(current):
 # Derfor settes den til mål + et påslag som justerer seg selv, i stedet for å sykle 30 °C/høy vifte.
 HOLD_OFFSET_MIN, HOLD_OFFSET_MAX = -3, 3
 HOLD_ADJUST_EVERY = 30 * 60      # maks én justering av påslaget per halvtime (hver kommando piper)
-HOLD_LOW, HOLD_HIGH = 0.4, 0.6   # rom under mål−0,4 → påslag +1; over mål+0,6 → påslag −1
+HOLD_LOW, HOLD_HIGH = 0.3, 0.3   # rom under mål−0,3 → påslag +1; over mål+0,3 → påslag −1
 HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
 
 def _is_heating(ac):
@@ -442,11 +442,8 @@ def auto_feedback_check():
     if current < target - hysteresis or (heating and current < target - HEAT_STOP_BELOW):
         if heating:
             return
-        # Holdet var ikke nok — neste hold skal ligge høyere
-        offset = min(HOLD_OFFSET_MAX, cache.get("hold_offset", 1) + 1)
-        if offset != cache.get("hold_offset", 1):
-            cache["hold_offset"] = offset
-            save_state()
+        # NB: påslaget økes ikke her — oppvarming skyldes ofte åpen dør, ikke for lavt hold.
+        # Holdet justeres bare av den langsomme regulatoren under.
         payload = {"on": True, "mode": "heat", "targetTemperature": 30, "fanLevel": "high"}
         if sensibo_patch(uid, payload, f"Auto oppvarming (rom {current:.1f}°C, mål {target:g}°C)"):
             cache["ac"].update(payload)
