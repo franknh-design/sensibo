@@ -62,10 +62,6 @@ cache = {
     "auto_enabled": False,
     "auto_target_temp": 22.0,
     "hysteresis": 1.0,
-    "hysteresis_upper": 1.0,
-    "rest_after_hours": 2.0,
-    "cooling_phase": None,
-    "cooling_phase_since": None,
     "normal_fan": "medium_high",
     "boost_temp": 22.0,
     "schedules": [],
@@ -626,8 +622,7 @@ def load_history():
 # PERSISTENT STATE
 # ============================================================
 STATE_KEYS = [
-    "auto_enabled", "auto_target_temp", "hysteresis", "hysteresis_upper",
-    "rest_after_hours", "normal_fan", "boost_temp", "schedules",
+    "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket"
 ]
 
@@ -760,6 +755,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", len(data))
+            # Alltid sjekk etter ny versjon — ellers viser iPhone-appen gamle sider etter deploy
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(data)
         except FileNotFoundError:
@@ -796,13 +793,9 @@ class Handler(BaseHTTPRequestHandler):
                 "hysteresis": cache.get("hysteresis", 1.0),
                 "target_temp": cache.get("auto_target_temp", 22),
                 "auto_enabled": cache.get("auto_enabled", False),
-                "auto_phase": cache.get("cooling_phase"),
                 "normal_fan": cache.get("normal_fan", "medium_high"),
                 "boost_temp": cache.get("boost_temp", 22.0),
                 "schedules": cache.get("schedules", []),
-                "hysteresis_upper": cache.get("hysteresis_upper", 1.0),
-                "rest_after_hours": cache.get("rest_after_hours", 2.0),
-                "cooling_phase": cache.get("cooling_phase"),
                 "boost_active": cache.get("boost_active", False),
                 "auto_paused_until": cache.get("external_pause_until"),
                 "hold_offset": cache.get("hold_offset", 1),
@@ -882,20 +875,12 @@ class Handler(BaseHTTPRequestHandler):
             if "hysteresis" in body:
                 cache["hysteresis"] = max(0.5, min(3.0, float(body["hysteresis"])))
                 log.info(f"Nedre hysteresis: {cache['hysteresis']}°C")
-            if "hysteresis_upper" in body:
-                cache["hysteresis_upper"] = max(0.5, min(5.0, float(body["hysteresis_upper"])))
-                log.info(f"Øvre hysteresis: {cache['hysteresis_upper']}°C")
-            if "rest_after_hours" in body:
-                cache["rest_after_hours"] = max(0.5, min(12.0, float(body["rest_after_hours"])))
-                log.info(f"Hvilemodus etter: {cache['rest_after_hours']}t")
             save_state()
             self.send_json({
                 "ok": True,
                 "target_temp": cache["auto_target_temp"],
                 "auto_enabled": cache["auto_enabled"],
                 "hysteresis": cache["hysteresis"],
-                "hysteresis_upper": cache["hysteresis_upper"],
-                "rest_after_hours": cache["rest_after_hours"],
                 "normal_fan": cache["normal_fan"],
                 "boost_temp": cache["boost_temp"],
                 "schedules": cache["schedules"]

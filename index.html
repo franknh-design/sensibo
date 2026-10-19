@@ -496,31 +496,13 @@ input[type=time]{color-scheme:dark}
           </div>
         </div>
         <div>
-          <div class="field-label">Nedre hysteresis — oppvarming starter</div>
+          <div class="field-label">Hysteresis — når oppvarming starter</div>
           <div class="temp-picker">
             <button onclick="adjSetting('hysteresis',-0.1)">−</button>
             <div class="val" id="hystVal">1.0°</div>
             <button onclick="adjSetting('hysteresis',0.1)">+</button>
           </div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px">Temp faller X°C under ønsket → 30°C + høy vifte</div>
-        </div>
-        <div>
-          <div class="field-label">Øvre hysteresis — vifte-modus starter</div>
-          <div class="temp-picker">
-            <button onclick="adjSetting('hysteresis_upper',-0.1)">−</button>
-            <div class="val" id="hystUpperVal">1.0°</div>
-            <button onclick="adjSetting('hysteresis_upper',0.1)">+</button>
-          </div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px">Temp stiger X°C over ønsket → vifte-modus + stille</div>
-        </div>
-        <div>
-          <div class="field-label">Hvilemodus etter</div>
-          <div class="temp-picker">
-            <button onclick="adjSetting('rest_after_hours',-0.5)">−</button>
-            <div class="val" id="restHoursVal">2.0 t</div>
-            <button onclick="adjSetting('rest_after_hours',0.5)">+</button>
-          </div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px">Timer i vifte-modus før pumpa slås helt av</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Rommet faller X°C under ønsket → 30°C + høy vifte til det er nesten varmt</div>
         </div>
       </div>
     </div>
@@ -534,33 +516,33 @@ input[type=time]{color-scheme:dark}
         <div>
           <div class="field-label">Mild — ønsket temp</div>
           <div class="temp-picker">
-            <button onclick="adjOutdoorRule('warm_temp',-0.5)">−</button>
+            <button onclick="adjOutdoorRule('warm_temp',-1)">−</button>
             <div class="val" id="orWarmTemp">23°</div>
-            <button onclick="adjOutdoorRule('warm_temp',0.5)">+</button>
+            <button onclick="adjOutdoorRule('warm_temp',1)">+</button>
           </div>
         </div>
         <div>
           <div class="field-label">…når det er minst så varmt ute</div>
           <div class="temp-picker">
-            <button onclick="adjOutdoorRule('warm_from',-0.5)">−</button>
+            <button onclick="adjOutdoorRule('warm_from',-1)">−</button>
             <div class="val" id="orWarmFrom">5°</div>
-            <button onclick="adjOutdoorRule('warm_from',0.5)">+</button>
+            <button onclick="adjOutdoorRule('warm_from',1)">+</button>
           </div>
         </div>
         <div>
           <div class="field-label">Kaldt — ønsket temp</div>
           <div class="temp-picker">
-            <button onclick="adjOutdoorRule('cold_temp',-0.5)">−</button>
+            <button onclick="adjOutdoorRule('cold_temp',-1)">−</button>
             <div class="val" id="orColdTemp">24°</div>
-            <button onclick="adjOutdoorRule('cold_temp',0.5)">+</button>
+            <button onclick="adjOutdoorRule('cold_temp',1)">+</button>
           </div>
         </div>
         <div>
           <div class="field-label">…når det blir kaldere enn ute</div>
           <div class="temp-picker">
-            <button onclick="adjOutdoorRule('cold_below',-0.5)">−</button>
+            <button onclick="adjOutdoorRule('cold_below',-1)">−</button>
             <div class="val" id="orColdBelow">4.5°</div>
-            <button onclick="adjOutdoorRule('cold_below',0.5)">+</button>
+            <button onclick="adjOutdoorRule('cold_below',1)">+</button>
           </div>
         </div>
         <div style="font-size:10px;color:var(--muted);line-height:1.6" id="orExplain"></div>
@@ -723,15 +705,9 @@ function applyStatus(d) {
   }
   if (d.hysteresis != null && !settings._serverSynced) {
     settings.hysteresis = d.hysteresis;
-    settings.hysteresis_upper = d.hysteresis_upper || 1.0;
-    settings.rest_after_hours = d.rest_after_hours || 2.0;
     settings._serverSynced = true;
         const el = document.getElementById("hystVal");
     if (el) el.textContent = settings.hysteresis.toFixed(1)+"°";
-    const el2 = document.getElementById("hystUpperVal");
-    if (el2) el2.textContent = settings.hysteresis_upper.toFixed(1)+"°";
-    const el3 = document.getElementById("restHoursVal");
-    if (el3) el3.textContent = settings.rest_after_hours.toFixed(1)+" t";
   }
   if (d.temperature != null) {
     S.currentTemp = d.temperature;
@@ -841,7 +817,7 @@ function adjOutdoorRule(key, delta) {
   if (!S.outdoorRule) return;
   const r = {...S.outdoorRule};
   if (key === "enabled") r.enabled = !r.enabled;
-  else r[key] = Math.round((r[key] + delta) * 2) / 2;
+  else r[key] = Math.round(r[key] + delta);  // hele grader
   r.warm_temp = Math.max(16, Math.min(28, r.warm_temp));
   r.cold_temp = Math.max(16, Math.min(28, r.cold_temp));
   r.warm_from = Math.max(-25, Math.min(20, r.warm_from));
@@ -1174,7 +1150,7 @@ function addLog(msg, type) {
 const PAGES = ["oversikt","timeplan","learn","settings"];
 let tpSchedTemp = 22;
 let tpSchedDays = [0,1,2,3,4];
-let settings = {"normalFan":"medium_high","hysteresis":1.0,"hysteresis_upper":1.0,"rest_after_hours":2.0};
+let settings = {"normalFan":"medium_high","hysteresis":1.0};
 
 function showPage(name, btn) {
   // Skjul alt
@@ -1364,8 +1340,6 @@ function clearHistory() {
 // ── Innstillinger-side ──
 function renderSettingsPage() {
   document.getElementById("hystVal").textContent = settings.hysteresis.toFixed(1)+"°";
-  document.getElementById("hystUpperVal").textContent = (settings.hysteresis_upper||1.0).toFixed(1)+"°";
-  document.getElementById("restHoursVal").textContent = (settings.rest_after_hours||2.0).toFixed(1)+" t";
 }
 
 function setNormalFan(btn, speed) {
@@ -1383,22 +1357,12 @@ function adjSetting(key, delta) {
     settings.hysteresis = Math.round((settings.hysteresis + delta) * 10) / 10;
     settings.hysteresis = Math.max(0.5, Math.min(3.0, settings.hysteresis));
     document.getElementById("hystVal").textContent = settings.hysteresis.toFixed(1)+"°";
-  } else if (key==="hysteresis_upper") {
-    settings.hysteresis_upper = Math.round((settings.hysteresis_upper + delta) * 10) / 10;
-    settings.hysteresis_upper = Math.max(0.5, Math.min(5.0, settings.hysteresis_upper));
-    document.getElementById("hystUpperVal").textContent = settings.hysteresis_upper.toFixed(1)+"°";
-  } else if (key==="rest_after_hours") {
-    settings.rest_after_hours = Math.round((settings.rest_after_hours + delta) * 2) / 2;
-    settings.rest_after_hours = Math.max(0.5, Math.min(12.0, settings.rest_after_hours));
-    document.getElementById("restHoursVal").textContent = settings.rest_after_hours.toFixed(1)+" t";
   }
     // Send alle til server
   fetch(`${API}/api/settings`, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      hysteresis: settings.hysteresis,
-      hysteresis_upper: settings.hysteresis_upper,
-      rest_after_hours: settings.rest_after_hours
+      hysteresis: settings.hysteresis
     })
   }).then(r=>r.json()).then(d=>{
     if (d.ok) showToast("Innstilling lagret ✓","ok");
