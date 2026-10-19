@@ -226,6 +226,7 @@ def get_device_uid():
 AC_KEYS = ("on", "mode", "targetTemperature", "fanLevel")
 
 EXTERNAL_PAUSE_HOURS = 3
+MIN_HOLD_OFF_TEMP = 16  # HA sin «verandadør åpen»-verdi
 
 def resume_from_pause(why):
     if cache.get("external_pause_until"):
@@ -240,6 +241,20 @@ def detect_external_change(ac):
     prev = cache.get("ac_seen")
     cache["ac_seen"] = seen
     if prev is None or seen == prev:
+        return
+    # 16 °C eller lavere / av = «hold av» (HA ved åpen verandadør): alltid pause, aldri gjenoppta på dette
+    hold_off = seen.get("on") is False or (seen.get("targetTemperature") or 99) <= MIN_HOLD_OFF_TEMP
+    if hold_off:
+        ours = cache.get("last_command") or {}
+        if ours and all(seen.get(k) == v for k, v in ours.items() if k in AC_KEYS):
+            return
+        cache["last_command"] = None
+        change = describe_change(prev, seen) or f"pumpe → {describe_ac(seen)}"
+        add_event("external", f"Endret utenfor appen: {change}", **seen)
+        if cache.get("auto_enabled"):
+            cache["external_pause_until"] = time.time() + EXTERNAL_PAUSE_HOURS * 3600
+            cache.pop("auto_heat_start", None)
+            add_event("auto", f"Auto pauset (pumpa satt til minimum/av utenfor appen) — fortsetter når den endres igjen, senest om {EXTERNAL_PAUSE_HOURS} t")
         return
     if cache.get("external_pause_until"):
         cache["external_pause_until"] = None
