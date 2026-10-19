@@ -402,7 +402,7 @@ def log_auto_heat_session(current):
 
 # Holdemodus: pumpa måler ved egen sensor (oppe på veggen) og demper seg før rommet er varmt nok.
 # Derfor settes den til mål + et påslag som justerer seg selv, i stedet for å sykle 30 °C/høy vifte.
-HOLD_OFFSET_MIN, HOLD_OFFSET_MAX = -1, 3
+HOLD_OFFSET_MIN, HOLD_OFFSET_MAX = -3, 3
 HOLD_ADJUST_EVERY = 30 * 60      # maks én justering av påslaget per halvtime (hver kommando piper)
 HOLD_LOW, HOLD_HIGH = 0.4, 0.6   # rom under mål−0,4 → påslag +1; over mål+0,6 → påslag −1
 HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
