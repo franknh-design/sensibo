@@ -29,6 +29,12 @@ SENSIBO_DEVICE_NAME = os.getenv("SENSIBO_DEVICE_NAME", "Frank's device AC")
 SENSIBO_DEVICE_UID = os.getenv("SENSIBO_DEVICE_UID", "YRqRonRH")  # Hardkodet riktig enhet
 METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
 METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
+# Utetemperatur fra Hue-sensoren ved kjellerdøra via Home Assistant; met.no er reserve
+HA_URL = os.getenv("HA_URL", "").rstrip("/")
+HA_TOKEN = os.getenv("HA_TOKEN", "")
+HA_OUTDOOR_ENTITY = os.getenv("HA_OUTDOOR_ENTITY", "")
+SENSOR_MAX_AGE = 3 * 3600      # sensoren regnes som død hvis den ikke har rapportert på 3 t
+SENSOR_POLL_EVERY = 5 * 60
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8765"))
 # Kun localhost — Cloudflare-tunnelen er eneste vei inn (0.0.0.0 ga åpen styring fra hele nettet)
 SERVER_HOST = os.getenv("SERVER_HOST", "127.0.0.1")
@@ -315,7 +321,7 @@ def fetch_metno():
         series = data["properties"]["timeseries"]
         if series:
             now = series[0]["data"]["instant"]["details"]
-            cache["outdoor_temp"] = now.get("air_temperature")
+            cache["metno_temp"] = now.get("air_temperature")
             cache["outdoor_forecast"] = [
                 {
                     "time": s["time"],
@@ -324,9 +330,46 @@ def fetch_metno():
                 for s in series[:12]
             ]
             cache["last_metno"] = time.time()
-            log.info(f"met.no: ute={cache['outdoor_temp']}°C")
+            log.info(f"met.no: ute={cache['metno_temp']}°C")
     except Exception as e:
         log.error(f"met.no feil: {e}")
+    resolve_outdoor()
+
+def fetch_outdoor_sensor():
+    """Leser Hue-utesensoren fra HA. Setter sensor_temp=None hvis HA er nede eller sensoren er gammel."""
+    cache["last_sensor_poll"] = time.time()
+    if not (HA_URL and HA_TOKEN and HA_OUTDOOR_ENTITY):
+        return
+    try:
+        r = requests.get(f"{HA_URL}/api/states/{HA_OUTDOOR_ENTITY}",
+                         headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
+        r.raise_for_status()
+        d = r.json()
+        seen = d.get("last_reported") or d.get("last_updated")
+        age = time.time() - datetime.fromisoformat(seen).timestamp()
+        val = float(d["state"])
+        cache["sensor_temp"] = val if age <= SENSOR_MAX_AGE else None
+        if age > SENSOR_MAX_AGE:
+            log.warning(f"Utesensor har ikke rapportert på {age/3600:.1f} t")
+    except Exception as e:
+        cache["sensor_temp"] = None
+        log.warning(f"Utesensor (HA) utilgjengelig: {type(e).__name__}")
+    resolve_outdoor()
+
+def resolve_outdoor():
+    """Velger kilde for utetemperatur: Hue-sensor når den lever, ellers met.no."""
+    if cache.get("sensor_temp") is not None:
+        temp, source = cache["sensor_temp"], "sensor"
+    else:
+        temp, source = cache.get("metno_temp"), "met.no"
+    if temp is None:
+        return
+    cache["outdoor_temp"] = temp
+    prev = cache.get("outdoor_source")
+    cache["outdoor_source"] = source
+    if prev and prev != source:
+        add_event("setting", "Utetemperatur fra Hue-sensoren igjen" if source == "sensor"
+                  else "Utesensoren svarer ikke — bruker met.no inntil videre")
 
 
 
@@ -579,6 +622,8 @@ def background_loop():
             fetch_sensibo_state()
         if now - cache["last_metno"] > 1800:  # 30 min
             fetch_metno()
+        if now - cache.get("last_sensor_poll", 0) > SENSOR_POLL_EVERY:
+            fetch_outdoor_sensor()
         try:
             outdoor_rule_check()
         except Exception as e:
@@ -786,6 +831,8 @@ class Handler(BaseHTTPRequestHandler):
                 "humidity": cache.get("humidity"),
                 "outdoor_temp": cache.get("outdoor_temp"),
                 "outdoor_forecast": cache.get("outdoor_forecast", [])[:6],
+                "outdoor_source": cache.get("outdoor_source"),
+                "metno_temp": cache.get("metno_temp"),
                 "ac": cache.get("ac", {}),
                 "prediction": pred,
                 "history_count": len(load_history()),
@@ -986,6 +1033,7 @@ if __name__ == "__main__":
 
     # Initial data-henting
     fetch_sensibo_state()
+    fetch_outdoor_sensor()
     fetch_metno()
 
     # Bakgrunns-loop

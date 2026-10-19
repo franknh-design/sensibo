@@ -213,7 +213,7 @@ input[type=time]{color-scheme:dark}
       <div class="temp-center">
         <div class="temp-label">Rom nå</div>
         <div class="temp-value" id="currentTempEl">—<span class="unit">°</span></div>
-        <div class="temp-sub">Mål: <span id="targetDisplay" style="color:var(--accent)">—</span> &nbsp;|&nbsp; Ute: <span id="outerDisplay">—</span></div>
+        <div class="temp-sub">Mål: <span id="targetDisplay" style="color:var(--accent)">—</span> &nbsp;|&nbsp; Ute: <span id="outerDisplay">—</span><span id="outerSrc" style="font-size:9px;color:var(--muted);margin-left:4px"></span></div>
       </div>
     </div>
   </div>
@@ -561,7 +561,7 @@ input[type=time]{color-scheme:dark}
           <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)"></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div><div style="font-size:12px;color:var(--text)">met.no lokasjon</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Finnsnes (69.23°N, 17.98°E)</div></div>
+          <div><div style="font-size:12px;color:var(--text)">Utetemperatur</div><div style="font-size:10px;color:var(--muted);margin-top:2px" id="outdoorSrcInfo">Hue-sensor ved kjellerdøra (via HA) · met.no Finnsnes som reserve</div></div>
           <div style="color:var(--accent);font-size:10px">✓</div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0">
@@ -720,6 +720,13 @@ function applyStatus(d) {
     const el = document.getElementById("outerDisplay");
     el.textContent = d.outdoor_temp.toFixed(1)+"°";
     el.style.color = d.outdoor_temp < 0 ? "var(--cold)" : "var(--warm)";
+    // Kilde: Hue-sensoren normalt; met.no bare når HA/sensoren er nede
+    const src = document.getElementById("outerSrc");
+    if (src) src.textContent = d.outdoor_source === "met.no" ? "(met.no)" : "";
+    const info = document.getElementById("outdoorSrcInfo");
+    if (info) info.textContent = d.outdoor_source === "met.no"
+      ? `Hue-sensoren svarer ikke — bruker met.no (${d.outdoor_temp.toFixed(1)}°) inntil videre`
+      : `Hue-sensor ved kjellerdøra (via HA)${d.metno_temp != null ? ` · met.no viser ${d.metno_temp.toFixed(1)}°` : ""}`;
   }
   if (d.ac) {
     S.isPowered = d.ac.on;
