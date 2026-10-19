@@ -477,21 +477,29 @@ def auto_feedback_check():
 # ============================================================
 # MÅL ETTER UTETEMPERATUR
 # ============================================================
-OUTDOOR_RULE_DEFAULT = {"enabled": True, "threshold": 5.0, "warm_temp": 23.0, "cold_temp": 24.0}
-OUTDOOR_RULE_BAND = 0.5  # bytt til «kaldt» under 4,5 °C, tilbake til «varmt» fra 5,0 °C
+# warm_from: «varmt» fra og med denne utetemp; cold_below: «kaldt» under denne. Gapet hindrer flipping.
+OUTDOOR_RULE_DEFAULT = {"enabled": True, "warm_from": 5.0, "cold_below": 4.5, "warm_temp": 23.0, "cold_temp": 24.0}
+
+def get_outdoor_rule():
+    r = {**OUTDOOR_RULE_DEFAULT, **(cache.get("outdoor_rule") or {})}
+    if "threshold" in r:  # eldre format: én terskel + fast 0,5 bånd
+        r.setdefault("warm_from", r["threshold"])
+        r["warm_from"] = r.pop("threshold")
+        r["cold_below"] = min(r.get("cold_below", r["warm_from"] - 0.5), r["warm_from"])
+    return r
 
 def outdoor_rule_check(force=False):
     """Setter ønsket temp etter utetemperaturen når den krysser terskelen (eller når regelen slås på).
     Ett utslag per bytte, så timeplan/manuelle endringer står seg til neste bytte."""
-    rule = {**OUTDOOR_RULE_DEFAULT, **(cache.get("outdoor_rule") or {})}
+    rule = get_outdoor_rule()
     out = cache.get("outdoor_temp")
     if not rule["enabled"] or out is None:
         return
     prev = cache.get("outdoor_bracket")
     if prev == "cold":
-        bracket = "warm" if out >= rule["threshold"] else "cold"
+        bracket = "warm" if out >= rule["warm_from"] else "cold"
     else:
-        bracket = "cold" if out < rule["threshold"] - OUTDOOR_RULE_BAND else "warm"
+        bracket = "cold" if out < rule["cold_below"] else "warm"
     if bracket == prev and not force:
         return
     cache["outdoor_bracket"] = bracket
@@ -798,7 +806,7 @@ class Handler(BaseHTTPRequestHandler):
                 "boost_active": cache.get("boost_active", False),
                 "auto_paused_until": cache.get("external_pause_until"),
                 "hold_offset": cache.get("hold_offset", 1),
-                "outdoor_rule": {**OUTDOOR_RULE_DEFAULT, **(cache.get("outdoor_rule") or {})},
+                "outdoor_rule": get_outdoor_rule(),
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
             })
@@ -844,14 +852,24 @@ class Handler(BaseHTTPRequestHandler):
                 log.info(f"Timeplan oppdatert: {len(cache['schedules'])} tidspunkter")
                 add_event("setting", f"Timeplan endret ({len(cache['schedules'])} tidspunkter)")
             if "outdoor_rule" in body and isinstance(body["outdoor_rule"], dict):
-                r = body["outdoor_rule"]
-                cache["outdoor_rule"] = {
-                    "enabled": bool(r.get("enabled", True)),
-                    "threshold": max(-20, min(20, float(r.get("threshold", 5)))),
-                    "warm_temp": max(16, min(28, float(r.get("warm_temp", 23)))),
-                    "cold_temp": max(16, min(28, float(r.get("cold_temp", 24)))),
+                r = {**get_outdoor_rule(), **body["outdoor_rule"]}
+                warm_from = max(-25, min(20, float(r["warm_from"])))
+                new_rule = {
+                    "enabled": bool(r["enabled"]),
+                    "warm_from": warm_from,
+                    "cold_below": max(-25, min(warm_from, float(r["cold_below"]))),
+                    "warm_temp": max(16, min(28, float(r["warm_temp"]))),
+                    "cold_temp": max(16, min(28, float(r["cold_temp"]))),
                 }
-                add_event("setting", "Mål etter utetemp " + ("på" if cache["outdoor_rule"]["enabled"] else "av"))
+                old_rule = get_outdoor_rule()
+                cache["outdoor_rule"] = new_rule
+                if new_rule["enabled"] != old_rule["enabled"]:
+                    add_event("setting", "Mål etter utetemp " + ("på" if new_rule["enabled"] else "av"))
+                elif new_rule != old_rule:
+                    add_event("setting", f"Mål etter utetemp: {new_rule['warm_temp']:g}° fra {new_rule['warm_from']:g}° ute, "
+                                         f"{new_rule['cold_temp']:g}° under {new_rule['cold_below']:g}° ute")
+                # Nye grenser/temperaturer skal gjelde med en gang, ikke først ved neste kryssing
+                cache.pop("outdoor_bracket", None)
                 outdoor_rule_check(force=True)
             if "target_temp" in body or body.get("auto_enabled"):
                 resume_from_pause("endring i appen")

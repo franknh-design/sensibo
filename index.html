@@ -526,6 +526,48 @@ input[type=time]{color-scheme:dark}
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Mål etter utetemperatur</span>
+        <button class="rule-btn" id="orEnabledBtn" onclick="adjOutdoorRule('enabled')">PÅ</button>
+      </div>
+      <div style="padding:18px;display:grid;gap:14px">
+        <div>
+          <div class="field-label">Mild — ønsket temp</div>
+          <div class="temp-picker">
+            <button onclick="adjOutdoorRule('warm_temp',-0.5)">−</button>
+            <div class="val" id="orWarmTemp">23°</div>
+            <button onclick="adjOutdoorRule('warm_temp',0.5)">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">…når det er minst så varmt ute</div>
+          <div class="temp-picker">
+            <button onclick="adjOutdoorRule('warm_from',-0.5)">−</button>
+            <div class="val" id="orWarmFrom">5°</div>
+            <button onclick="adjOutdoorRule('warm_from',0.5)">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Kaldt — ønsket temp</div>
+          <div class="temp-picker">
+            <button onclick="adjOutdoorRule('cold_temp',-0.5)">−</button>
+            <div class="val" id="orColdTemp">24°</div>
+            <button onclick="adjOutdoorRule('cold_temp',0.5)">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">…når det blir kaldere enn ute</div>
+          <div class="temp-picker">
+            <button onclick="adjOutdoorRule('cold_below',-0.5)">−</button>
+            <div class="val" id="orColdBelow">4.5°</div>
+            <button onclick="adjOutdoorRule('cold_below',0.5)">+</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="orExplain"></div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">System</div>
       <div style="padding:18px;display:grid;gap:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -710,7 +752,7 @@ function applyStatus(d) {
     const acTemp = d.ac.targetTemperature;
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
-    if (d.outdoor_rule) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
       if (ho) ho.textContent = (d.hold_offset >= 0 ? "+" : "") + d.hold_offset;
@@ -774,25 +816,55 @@ function toggleAuto() {
   updateAutoToggleUI();
 }
 
+const fmtDeg = v => (Math.round(v*10)/10).toString().replace(".", ",") + "°";
+
 function renderOutdoorRule() {
   const r = S.outdoorRule; if (!r) return;
-  const btn = document.getElementById("outdoorRuleBtn");
-  btn.textContent = r.enabled ? "PÅ" : "AV";
-  btn.classList.toggle("on", r.enabled);
+  for (const id of ["outdoorRuleBtn", "orEnabledBtn"]) {
+    const btn = document.getElementById(id); if (!btn) continue;
+    btn.textContent = r.enabled ? "PÅ" : "AV";
+    btn.classList.toggle("on", r.enabled);
+  }
   document.getElementById("outdoorRuleTxt").textContent =
-    `${r.warm_temp}° når ≥${r.threshold}° ute · ${r.cold_temp}° når kaldere`;
+    `${fmtDeg(r.warm_temp)} når ≥${fmtDeg(r.warm_from)} ute · ${fmtDeg(r.cold_temp)} når under ${fmtDeg(r.cold_below)}`;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtDeg(v); };
+  set("orWarmTemp", r.warm_temp); set("orWarmFrom", r.warm_from);
+  set("orColdTemp", r.cold_temp); set("orColdBelow", r.cold_below);
+  const ex = document.getElementById("orExplain");
+  if (ex) ex.textContent = r.enabled
+    ? `Bytter til ${fmtDeg(r.cold_temp)} når det blir kaldere enn ${fmtDeg(r.cold_below)} ute, og tilbake til ${fmtDeg(r.warm_temp)} når det er ${fmtDeg(r.warm_from)} eller varmere. Mellom grensene beholdes det som gjelder, så målet ikke hopper fram og tilbake. Endrer du ønsket temp selv, gjelder den til neste bytte.`
+    : "Av — ønsket temperatur styres bare av deg og timeplanen.";
 }
 
-function toggleOutdoorRule() {
+let _orSave = null;
+function adjOutdoorRule(key, delta) {
   if (!S.outdoorRule) return;
-  S.outdoorRule = {...S.outdoorRule, enabled: !S.outdoorRule.enabled};
+  const r = {...S.outdoorRule};
+  if (key === "enabled") r.enabled = !r.enabled;
+  else r[key] = Math.round((r[key] + delta) * 2) / 2;
+  r.warm_temp = Math.max(16, Math.min(28, r.warm_temp));
+  r.cold_temp = Math.max(16, Math.min(28, r.cold_temp));
+  r.warm_from = Math.max(-25, Math.min(20, r.warm_from));
+  r.cold_below = Math.max(-25, Math.min(20, r.cold_below));
+  // Kald-grensen kan ikke ligge over mild-grensen — dytt den andre med
+  if (r.cold_below > r.warm_from) { if (key === "cold_below") r.warm_from = r.cold_below; else r.cold_below = r.warm_from; }
+  S.outdoorRule = r;
+  S.outdoorRuleDirty = true;
   renderOutdoorRule();
-  fetch(`${API}/api/settings`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({outdoor_rule: S.outdoorRule})
-  }).then(() => setTimeout(fetchStatus, 1500)).catch(()=>{});
-  showToast(S.outdoorRule.enabled ? "Mål etter utetemp på" : "Mål etter utetemp av", "ok");
+  clearTimeout(_orSave);
+  _orSave = setTimeout(() => {
+    fetch(`${API}/api/settings`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({outdoor_rule: S.outdoorRule})
+    }).then(r => r.json()).then(d => {
+      S.outdoorRuleDirty = false;
+      showToast(d.ok ? "Lagret ✓" : "Kunne ikke lagre", d.ok ? "ok" : "err");
+      setTimeout(fetchStatus, 1000);
+    }).catch(() => showToast("Kunne ikke lagre","err"));
+  }, 700);
 }
+
+function toggleOutdoorRule() { adjOutdoorRule("enabled"); }
 
 function updateAutoToggleUI() {
   const title = document.getElementById("autoToggleTitle");
