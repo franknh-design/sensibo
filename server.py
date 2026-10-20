@@ -35,6 +35,7 @@ HA_TOKEN = os.getenv("HA_TOKEN", "")
 HA_OUTDOOR_ENTITY = os.getenv("HA_OUTDOOR_ENTITY", "")
 SENSOR_MAX_AGE = 3 * 3600      # sensoren regnes som død hvis den ikke har rapportert på 3 t
 SENSOR_POLL_EVERY = 5 * 60
+SENSOR_GRACE = 30 * 60         # HA faller ut korte perioder — behold siste gode verdi så lenge
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8765"))
 # Kun localhost — Cloudflare-tunnelen er eneste vei inn (0.0.0.0 ga åpen styring fra hele nettet)
 SERVER_HOST = os.getenv("SERVER_HOST", "127.0.0.1")
@@ -348,17 +349,21 @@ def fetch_outdoor_sensor():
         seen = d.get("last_reported") or d.get("last_updated")
         age = time.time() - datetime.fromisoformat(seen).timestamp()
         val = float(d["state"])
-        cache["sensor_temp"] = val if age <= SENSOR_MAX_AGE else None
-        if age > SENSOR_MAX_AGE:
+        if age <= SENSOR_MAX_AGE:
+            cache["sensor_temp"] = val
+            cache["sensor_ok_at"] = time.time()
+        else:
+            cache["sensor_temp"] = None
             log.warning(f"Utesensor har ikke rapportert på {age/3600:.1f} t")
+    except requests.HTTPError as e:
+        log.warning(f"Utesensor (HA) utilgjengelig: HTTP {e.response.status_code}")
     except Exception as e:
-        cache["sensor_temp"] = None
         log.warning(f"Utesensor (HA) utilgjengelig: {type(e).__name__}")
     resolve_outdoor()
 
 def resolve_outdoor():
     """Velger kilde for utetemperatur: Hue-sensor når den lever, ellers met.no."""
-    if cache.get("sensor_temp") is not None:
+    if cache.get("sensor_temp") is not None and time.time() - cache.get("sensor_ok_at", 0) <= SENSOR_GRACE:
         temp, source = cache["sensor_temp"], "sensor"
     else:
         temp, source = cache.get("metno_temp"), "met.no"
@@ -369,7 +374,7 @@ def resolve_outdoor():
     cache["outdoor_source"] = source
     if prev and prev != source:
         add_event("setting", "Utetemperatur fra Hue-sensoren igjen" if source == "sensor"
-                  else "Utesensoren svarer ikke — bruker met.no inntil videre")
+                  else f"Ingen svar fra Home Assistant på {SENSOR_GRACE // 60} min — bruker met.no inntil videre")
 
 
 
