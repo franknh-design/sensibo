@@ -281,6 +281,7 @@ input[type=time]{color-scheme:dark}
           </div>
           <button class="rule-btn" id="outdoorRuleBtn" onclick="toggleOutdoorRule()">PÅ</button>
         </div>
+        <button class="rule-btn on" style="margin-top:10px;width:100%" onclick="openNightSettings()">Juster nattsenking og mål etter utetemp ›</button>
       </div>
       <div>
         <div class="field-label">Planlagte tidspunkter</div>
@@ -484,28 +485,26 @@ input[type=time]{color-scheme:dark}
   </div>
   <div style="padding:0 24px;display:grid;gap:14px">
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Varmepumpe</div>
+    <div id="nightCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Nattsenking</span>
+        <button class="rule-btn" id="nightEnabledBtn" onclick="saveNight({enabled: !(S.night && S.night.enabled)})">PÅ</button>
+      </div>
       <div style="padding:18px;display:grid;gap:14px">
         <div>
-          <div class="field-label">Normalinnstilling vifte</div>
-          <div class="fan-grid">
-            <button class="fan-btn" onclick="setNormalFan(this,'quiet')">Stille</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'low')">Lav</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'medium')">Middels</button>
-            <button class="fan-btn active" id="normalFanBtn-medium_high" onclick="setNormalFan(this,'medium_high')">Mid-Høy</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'high')">Høy</button>
-          </div>
-        </div>
-        <div>
-          <div class="field-label">Hysteresis — når oppvarming starter</div>
+          <div class="field-label">Nattetemp</div>
           <div class="temp-picker">
-            <button onclick="adjSetting('hysteresis',-0.1)">−</button>
-            <div class="val" id="hystVal">1.0°</div>
-            <button onclick="adjSetting('hysteresis',0.1)">+</button>
+            <button onclick="saveNight({temp: S.night.temp - 1})">−</button>
+            <div class="val" id="nightTemp">20°</div>
+            <button onclick="saveNight({temp: S.night.temp + 1})">+</button>
           </div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px">Rommet faller X°C under ønsket → 30°C + høy vifte til det er nesten varmt</div>
         </div>
+        <div class="night-times">
+          <label><div class="field-label">Fra (søn–tor)</div><input type="time" id="nightStart" onchange="saveNight({start: this.value})"></label>
+          <label><div class="field-label">Fra (fre/lør)</div><input type="time" id="nightWeekend" onchange="saveNight({weekend_start: this.value})"></label>
+          <label><div class="field-label">Til</div><input type="time" id="nightEnd" onchange="saveNight({end: this.value})"></label>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="nightExplain"></div>
       </div>
     </div>
 
@@ -551,28 +550,33 @@ input[type=time]{color-scheme:dark}
       </div>
     </div>
 
+
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
-        <span>Nattsenking</span>
-        <button class="rule-btn" id="nightEnabledBtn" onclick="saveNight({enabled: !(S.night && S.night.enabled)})">PÅ</button>
-      </div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Varmepumpe</div>
       <div style="padding:18px;display:grid;gap:14px">
         <div>
-          <div class="field-label">Nattetemp</div>
-          <div class="temp-picker">
-            <button onclick="saveNight({temp: S.night.temp - 1})">−</button>
-            <div class="val" id="nightTemp">20°</div>
-            <button onclick="saveNight({temp: S.night.temp + 1})">+</button>
+          <div class="field-label">Normalinnstilling vifte</div>
+          <div class="fan-grid">
+            <button class="fan-btn" onclick="setNormalFan(this,'quiet')">Stille</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'low')">Lav</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'medium')">Middels</button>
+            <button class="fan-btn active" id="normalFanBtn-medium_high" onclick="setNormalFan(this,'medium_high')">Mid-Høy</button>
+            <button class="fan-btn" onclick="setNormalFan(this,'high')">Høy</button>
           </div>
         </div>
-        <div class="night-times">
-          <label><div class="field-label">Fra (søn–tor)</div><input type="time" id="nightStart" onchange="saveNight({start: this.value})"></label>
-          <label><div class="field-label">Fra (fre/lør)</div><input type="time" id="nightWeekend" onchange="saveNight({weekend_start: this.value})"></label>
-          <label><div class="field-label">Til</div><input type="time" id="nightEnd" onchange="saveNight({end: this.value})"></label>
+        <div>
+          <div class="field-label">Hysteresis — når oppvarming starter</div>
+          <div class="temp-picker">
+            <button onclick="adjSetting('hysteresis',-0.1)">−</button>
+            <div class="val" id="hystVal">1.0°</div>
+            <button onclick="adjSetting('hysteresis',0.1)">+</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Rommet faller X°C under ønsket → 30°C + høy vifte til det er nesten varmt</div>
         </div>
-        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="nightExplain"></div>
       </div>
     </div>
+
+
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">System</div>
@@ -873,6 +877,12 @@ function adjOutdoorRule(key, delta) {
   }, 700);
 }
 
+function openNightSettings() {
+  const btn = document.querySelectorAll(".nav-btn")[3];
+  showPage("settings", btn);
+  setTimeout(() => document.getElementById("nightCard").scrollIntoView({block:"start"}), 150);
+}
+
 function renderNight() {
   const n = S.night; if (!n) return;
   const btn = document.getElementById("nightEnabledBtn");
@@ -889,12 +899,19 @@ function renderNight() {
   if (rt && n.enabled && S.outdoorRule) rt.textContent += ` · natt ${n.temp}° ${n.start}–${n.end}`;
 }
 
+let _nightSave = null;
 function saveNight(change) {
   if (!S.night) return;
   S.night = {...S.night, ...change};
   S.night.temp = Math.max(16, Math.min(28, S.night.temp));
   S.nightSaving = true;
   renderNight();
+  // Vent til klokkeslettet er ferdig skrevet — ellers lagres halve verdier (f.eks. 00:00) underveis
+  clearTimeout(_nightSave);
+  _nightSave = setTimeout(sendNight, 1500);
+}
+
+function sendNight() {
   fetch(`${API}/api/settings`, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({night: S.night})
