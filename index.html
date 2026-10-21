@@ -492,7 +492,6 @@ input[type=time]{color-scheme:dark}
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Sesjonslogg</div>
       <div id="sessionLog" style="padding:12px 18px;display:grid;gap:6px;max-height:300px;overflow-y:auto"></div>
     </div>
-    <button onclick="clearHistory()" style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.2);border-radius:10px;padding:12px;color:var(--danger);font-family:var(--mono);font-size:11px;cursor:pointer">Slett all læringshistorikk</button>
   </div>
 </div>
 
@@ -1427,14 +1426,6 @@ function renderLearnPage() {
       </div>
     `;
   }).join("");
-}
-
-function clearHistory() {
-  if (!confirm("Slett all læringshistorikk?")) return;
-  S.history = [];
-  renderLearnPage();
-  renderHistory();
-  showToast("Historikk slettet","ok");
 }
 
 // ── Innstillinger-side ──
