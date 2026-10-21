@@ -502,6 +502,24 @@ input[type=time]{color-scheme:dark}
   </div>
   <div class="card-grid" style="padding:0 24px;display:grid;gap:14px">
 
+    <div id="stoveCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Vedovn-stopp</span>
+        <button class="rule-btn" id="stoveEnabledBtn" onclick="saveStove({enabled: !(S.stove && S.stove.enabled)})">PÅ</button>
+      </div>
+      <div style="padding:18px;display:grid;gap:14px">
+        <div>
+          <div class="field-label">Slå av pumpa når sensoren over ovnen viser over</div>
+          <div class="temp-picker">
+            <button onclick="saveStove({off_above: S.stove.off_above - 1})">−</button>
+            <div class="val" id="stoveOffAbove">26°</div>
+            <button onclick="saveStove({off_above: S.stove.off_above + 1})">+</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="stoveExplain"></div>
+      </div>
+    </div>
+
     <div id="nightCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
         <span>Nattsenking</span>
@@ -790,6 +808,7 @@ function applyStatus(d) {
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
     if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; renderNight(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
@@ -908,6 +927,32 @@ function openNightSettings() {
   setTimeout(() => document.getElementById("nightCard").scrollIntoView({block:"start"}), 150);
 }
 
+function renderStove() {
+  const st = S.stove; if (!st) return;
+  const b = document.getElementById("stoveEnabledBtn");
+  b.textContent = st.enabled ? "PÅ" : "AV"; b.classList.toggle("on", st.enabled);
+  document.getElementById("stoveOffAbove").textContent = st.off_above + "°";
+  document.getElementById("stoveExplain").textContent = !st.enabled ? "Av — pumpa styres som vanlig selv om ovnen fyrer."
+    : (S.stoveActive ? `🔥 Vedovnen fyrer nå — pumpa er av til sensoren er under ${st.off_above - 1}°. `
+                     : "") + `Pumpa slås av over ${st.off_above}° og auto tar over igjen under ${st.off_above - 1}°. Gjelder i auto-modus.`;
+  updateAutoToggleUI();
+}
+
+let _stoveSave = null;
+function saveStove(change) {
+  if (!S.stove) return;
+  S.stove = {...S.stove, ...change};
+  S.stove.off_above = Math.max(20, Math.min(45, S.stove.off_above));
+  S.stoveSaving = true;
+  renderStove();
+  clearTimeout(_stoveSave);
+  _stoveSave = setTimeout(() => {
+    fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({stove: S.stove})})
+      .then(r => r.json()).then(d => { S.stoveSaving = false; showToast(d.ok ? "Lagret ✓" : "Kunne ikke lagre", d.ok ? "ok" : "err"); setTimeout(fetchStatus, 800); })
+      .catch(() => { S.stoveSaving = false; showToast("Kunne ikke lagre","err"); });
+  }, 700);
+}
+
 function renderNight() {
   const n = S.night; if (!n) return;
   const btn = document.getElementById("nightEnabledBtn");
@@ -961,7 +1006,10 @@ function toggleOutdoorRule() { adjOutdoorRule("enabled"); }
 function updateAutoToggleUI() {
   const title = document.getElementById("autoToggleTitle");
   const sub = document.getElementById("autoToggleSub");
-  if (S.autoEnabled && S.pausedUntil) {
+  if (S.autoEnabled && S.stoveActive) {
+    title.textContent = "🔥 Vedovnen fyrer";
+    sub.textContent = `Pumpa er av · auto fortsetter under ${(S.stove?.off_above ?? 26) - 1}° over ovnen`;
+  } else if (S.autoEnabled && S.pausedUntil) {
     const til = new Date(S.pausedUntil*1000).toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
     title.textContent = "⏸ Auto pauset";
     sub.textContent = `Endret utenfor appen · fortsetter senest ${til}`;

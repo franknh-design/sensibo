@@ -454,6 +454,49 @@ HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
 def _is_heating(ac):
     return ac.get("on") and ac.get("targetTemperature") == 30 and ac.get("fanLevel") == "high"
 
+# ── Vedovn-stopp: sensoren henger på pipa over vedovnen ──
+STOVE_DEFAULT = {"enabled": True, "off_above": 26}
+STOVE_RESUME_BELOW = 1.0   # auto tilbake når sensoren er 1 °C under grensen
+
+def get_stove():
+    return {**STOVE_DEFAULT, **(cache.get("stove") or {})}
+
+def stove_check(uid, current):
+    """True = vedovnen fyrer og pumpa skal stå av (auto gjør ingenting annet)."""
+    st = get_stove()
+    active = cache.get("stove_active")
+    if not st["enabled"]:
+        if active:
+            stove_end(current, "vedovn-stopp slått av")
+        return False
+    if not active and current > st["off_above"]:
+        cache["stove_active"] = True
+        cache["stove_saved_offset"] = cache.get("hold_offset", 1)
+        cache["boost_active"] = False
+        cache.pop("auto_heat_start", None)
+        add_event("auto", f"Vedovnen fyrer ({current:.1f}°C over ovnen > {st['off_above']}°C) — slår av pumpa")
+        save_state()
+    elif active and current < st["off_above"] - STOVE_RESUME_BELOW:
+        stove_end(current, f"{current:.1f}°C over ovnen")
+        return False
+    if cache.get("stove_active"):
+        ac = cache.get("ac", {})
+        if ac.get("on") is not False:
+            if sensibo_patch(uid, {"on": False}, "Vedovn-stopp"):
+                cache["ac"]["on"] = False
+        return True
+    return False
+
+def stove_end(current, why):
+    cache["stove_active"] = False
+    # Påslaget var frosset — sett tilbake det som gjaldt før ovnen ble fyrt
+    if cache.get("stove_saved_offset") is not None:
+        cache["hold_offset"] = cache.pop("stove_saved_offset")
+    # Pipa er fortsatt varm en stund: ingen justering av påslaget før om 1,5 t
+    cache["hold_adjusted_at"] = time.time() + 3600
+    add_event("auto", f"Vedovnen har roet seg ({why}) — auto tar over igjen")
+    save_state()
+
 def auto_feedback_check():
     """
     1. Oppvarming: romtemp < mål − hysteresis → 30 °C + høy vifte, til rommet er mål − 0,3.
@@ -461,6 +504,10 @@ def auto_feedback_check():
     Sender kun kommando når innstillingen faktisk må endres.
     """
     if not cache["auto_enabled"]:
+        return
+    current_room = cache.get("temperature")
+    uid0 = get_device_uid()
+    if current_room is not None and uid0 and stove_check(uid0, current_room):
         return
     if cache.get("boost_active"):
         return  # Boost kjører — auto pauset
@@ -771,7 +818,8 @@ def load_history():
 STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
-    "night", "target_mode", "day_target", "preheat_for"
+    "night", "target_mode", "day_target", "preheat_for",
+    "stove", "stove_active", "stove_saved_offset"
 ]
 
 def save_state():
@@ -952,6 +1000,8 @@ class Handler(BaseHTTPRequestHandler):
                 "outdoor_rule": get_outdoor_rule(),
                 "night": get_night(),
                 "preheat": cache.get("preheat"),
+                "stove": get_stove(),
+                "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
@@ -1017,6 +1067,13 @@ class Handler(BaseHTTPRequestHandler):
                 # Nye grenser/temperaturer skal gjelde med en gang, ikke først ved neste kryssing
                 cache.pop("outdoor_bracket", None)
                 outdoor_rule_check(force=True)
+            if "stove" in body and isinstance(body["stove"], dict):
+                st = {**get_stove(), **body["stove"]}
+                new_st = {"enabled": bool(st["enabled"]), "off_above": max(20, min(45, round(float(st["off_above"]))))}
+                if new_st != get_stove():
+                    cache["stove"] = new_st
+                    add_event("setting", f"Vedovn-stopp: av over {new_st['off_above']}°C" if new_st["enabled"] else "Vedovn-stopp av")
+                    cache["last_sensibo"] = 0
             if "night" in body and isinstance(body["night"], dict):
                 n = {**get_night(), **body["night"]}
                 try:
