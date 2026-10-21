@@ -186,6 +186,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fade-in{animation:fadeIn 0.3s ease forwards}
 input[type=time]{color-scheme:dark}
+.page{max-width:430px;margin:0 auto}
+
+/* PC: to kolonner (telefon uendret) */
+@media (min-width: 900px) {
+  .app, .page{max-width:1080px}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 24px;align-items:start}
+  .cols > .col:last-child{position:sticky;top:16px}
+  .cols .log-list{max-height:calc(100vh - 380px);min-height:300px}
+  /* Kortene pakkes i to spalter uten tomrom (ulike høyder) */
+  .card-grid{display:block !important;columns:2;column-gap:24px}
+  .card-grid > *{break-inside:avoid;margin-bottom:14px}
+  .header{padding-top:32px}
+  .bottom-nav{justify-content:center}
+  .bottom-nav .nav-btn{max-width:180px}
+}
 </style>
 </head>
 <body>
@@ -203,6 +218,7 @@ input[type=time]{color-scheme:dark}
     </div>
   </div>
 
+  <div class="cols"><div class="col">
   <!-- Temp ring -->
   <div style="padding:0 24px 20px">
     <div class="temp-ring-wrap">
@@ -385,6 +401,7 @@ input[type=time]{color-scheme:dark}
 
 
 
+  </div><div class="col">
   <!-- Learning -->
   <div class="learn-panel">
     <div class="learn-header">
@@ -420,6 +437,7 @@ input[type=time]{color-scheme:dark}
     </div>
   </div>
 
+  </div></div>
 </div>
 
 <!-- TIMEPLAN side -->
@@ -460,7 +478,7 @@ input[type=time]{color-scheme:dark}
     <div><div class="header-title">Læringsmotor</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Historikk og prediksjoner</div></div>
     <div style="font-size:11px;color:var(--muted)" id="learnBadge2">0 sesjoner</div>
   </div>
-  <div style="padding:0 24px;display:grid;gap:12px">
+  <div class="card-grid" style="padding:0 24px;display:grid;gap:12px">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
       <div class="info-card"><div class="info-card-label">Snitt tid</div><div class="info-card-value" id="ls-avg">—</div><div class="info-card-sub">min</div></div>
       <div class="info-card"><div class="info-card-label">Beste</div><div class="info-card-value" id="ls-best">—</div><div class="info-card-sub">min/°C</div></div>
@@ -483,7 +501,7 @@ input[type=time]{color-scheme:dark}
   <div class="header">
     <div><div class="header-title">Innstillinger</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Konfigurasjon</div></div>
   </div>
-  <div style="padding:0 24px;display:grid;gap:14px">
+  <div class="card-grid" style="padding:0 24px;display:grid;gap:14px">
 
     <div id="nightCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
