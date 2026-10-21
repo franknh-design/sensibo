@@ -534,7 +534,7 @@ def get_outdoor_rule():
 
 # Nattsenking: eget mål om natta; om morgenen går målet tilbake til dagregelen (utetemp).
 # weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
-NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0}
+NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True}
 
 def get_night():
     return {**NIGHT_DEFAULT, **(cache.get("night") or {})}
@@ -545,6 +545,10 @@ def _hm(txt):
 
 def in_night(now, n):
     """Er vi i nattperioden? Natta «tilhører» kvelden den startet (før kl. 12 = gårsdagens kveld)."""
+    return night_window(now, n)[0]
+
+def night_window(now, n):
+    """(i_natt, slutt) for natta som gjelder nå."""
     evening = (now - timedelta(days=1)).date() if now.hour < 12 else now.date()
     weekend = evening.weekday() in (4, 5)  # fredag/lørdag kveld
     sh, sm = _hm(n["weekend_start"] if weekend else n["start"])
@@ -553,7 +557,39 @@ def in_night(now, n):
     start = datetime(start_day.year, start_day.month, start_day.day, sh, sm, tzinfo=LOCAL_TZ)
     nxt = evening + timedelta(days=1)
     end = datetime(nxt.year, nxt.month, nxt.day, eh, em, tzinfo=LOCAL_TZ)
-    return start <= now < end
+    return start <= now < end, end
+
+# ── Forvarming: læringsmotoren bestemmer når morgenoppvarmingen må starte ──
+PREHEAT_FALLBACK_MIN_PER_DEG = 30   # før vi har egne data
+PREHEAT_MARGIN = 1.15                # 15 % slingringsmonn
+PREHEAT_MAX_MIN = 180
+PREHEAT_OUTDOOR_WINDOW = 5           # bruk sesjoner med utetemp innenfor ±5 °C
+
+def learned_min_per_deg(outdoor):
+    """Median min/°C fra de 10 siste oppvarmingene med lignende utetemp (ellers alle). (verdi, antall)"""
+    hist = load_history()
+    similar = [h for h in hist if outdoor is not None and h.get("outdoor_temp") not in (None, "")
+               and abs(float(h["outdoor_temp"]) - outdoor) <= PREHEAT_OUTDOOR_WINDOW]
+    pool = (similar or hist)[-10:]
+    vals = sorted(float(h["min_per_deg"]) for h in pool if float(h.get("min_per_deg") or 0) > 0)
+    if not vals:
+        return PREHEAT_FALLBACK_MIN_PER_DEG, 0, False
+    mid = len(vals) // 2
+    med = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
+    return med, len(vals), bool(similar)
+
+def preheat_plan(day_temp, end):
+    """Når må oppvarmingen starte for å nå day_temp til end? None hvis det ikke trengs."""
+    room, out = cache.get("temperature"), cache.get("outdoor_temp")
+    if room is None or day_temp is None:
+        return None
+    delta = day_temp - room
+    if delta <= 0.2:
+        return None
+    mpd, n, similar = learned_min_per_deg(out)
+    minutes = min(PREHEAT_MAX_MIN, round(delta * mpd * PREHEAT_MARGIN))
+    return {"start": end - timedelta(minutes=minutes), "ready": end, "minutes": minutes,
+            "delta": round(delta, 1), "min_per_deg": round(mpd, 1), "sessions": n, "similar": similar}
 
 def outdoor_rule_check(force=False):
     """Bestemmer ønsket temp: nattsenking om natta, ellers mål etter utetemperatur.
@@ -570,7 +606,27 @@ def outdoor_rule_check(force=False):
             bracket = "cold" if out < rule["cold_below"] else "warm"
         cache["outdoor_bracket"] = bracket
 
-    is_night = night["enabled"] and in_night(datetime.now(LOCAL_TZ), night)
+    now = datetime.now(LOCAL_TZ)
+    is_night, night_end = night_window(now, night) if night["enabled"] else (False, None)
+    cache["preheat"] = None
+    if is_night and night.get("preheat", True):
+        # Har forvarmingen allerede startet for denne natta, står den (ikke tilbake til natt)
+        if cache.get("preheat_for") == night_end.isoformat():
+            is_night = False
+        else:
+            day_temp = (rule["warm_temp"] if bracket == "warm" else rule["cold_temp"]) if rule["enabled"] \
+                       else (cache.get("day_target") or cache.get("auto_target_temp"))
+            plan = preheat_plan(day_temp, night_end)
+            if plan:
+                cache["preheat"] = {**plan, "start": plan["start"].isoformat(), "ready": plan["ready"].isoformat()}
+                if now >= plan["start"]:
+                    cache["preheat_for"] = night_end.isoformat()
+                    is_night = False
+                    src = (f"{plan['min_per_deg']:g} min/°C fra {plan['sessions']} oppvarminger"
+                           + ("" if plan["similar"] else " (ingen med lignende utetemp ennå)")) if plan["sessions"] \
+                          else f"standard {PREHEAT_FALLBACK_MIN_PER_DEG} min/°C (ingen data ennå)"
+                    add_event("auto", f"Forvarming startet: {cache.get('temperature'):.1f} → {day_temp:g}°C på ~{plan['minutes']} min "
+                                      f"({src}), varmt kl. {night_end:%H:%M}")
     mode = "night" if is_night else (bracket if rule["enabled"] else "day")
     prev = cache.get("target_mode")
     if mode == prev and not force:
@@ -715,7 +771,7 @@ def load_history():
 STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
-    "night", "target_mode", "day_target"
+    "night", "target_mode", "day_target", "preheat_for"
 ]
 
 def save_state():
@@ -895,6 +951,7 @@ class Handler(BaseHTTPRequestHandler):
                 "hold_offset": cache.get("hold_offset", 1),
                 "outdoor_rule": get_outdoor_rule(),
                 "night": get_night(),
+                "preheat": cache.get("preheat"),
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
@@ -967,7 +1024,8 @@ class Handler(BaseHTTPRequestHandler):
                         h, m = _hm(n[k]); assert 0 <= h < 24 and 0 <= m < 60
                         n[k] = f"{h:02d}:{m:02d}"
                     new_night = {"enabled": bool(n["enabled"]), "start": n["start"], "weekend_start": n["weekend_start"],
-                                 "end": n["end"], "temp": max(16, min(28, round(float(n["temp"]))))}
+                                 "end": n["end"], "temp": max(16, min(28, round(float(n["temp"])))),
+                                 "preheat": bool(n.get("preheat", True))}
                 except (ValueError, AssertionError, TypeError):
                     self.send_json({"ok": False, "error": "Ugyldig klokkeslett"}); return
                 if new_night != get_night():

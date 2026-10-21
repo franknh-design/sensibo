@@ -521,7 +521,15 @@ input[type=time]{color-scheme:dark}
           <label><div class="field-label">Fra (fre/lør)</div><input type="time" id="nightWeekend" onchange="saveNight({weekend_start: this.value})"></label>
           <label><div class="field-label">Til</div><input type="time" id="nightEnd" onchange="saveNight({end: this.value})"></label>
         </div>
+        <div class="rule-row" style="margin-top:0">
+          <div>
+            <div style="color:var(--text);font-size:12px">Forvarming med læringsmotoren</div>
+            <div style="font-size:10px;color:var(--muted)">Starter morgenoppvarmingen i tide til å være varm ved «Til»</div>
+          </div>
+          <button class="rule-btn" id="preheatBtn" onclick="saveNight({preheat: !(S.night && S.night.preheat !== false)})">PÅ</button>
+        </div>
         <div style="font-size:10px;color:var(--muted);line-height:1.6" id="nightExplain"></div>
+        <div style="font-size:10px;color:var(--accent);line-height:1.6" id="preheatPlan"></div>
       </div>
     </div>
 
@@ -782,7 +790,7 @@ function applyStatus(d) {
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
-    if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; renderNight(); }
+    if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; renderNight(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
       if (ho) ho.textContent = (d.hold_offset >= 0 ? "+" : "") + d.hold_offset;
@@ -912,6 +920,15 @@ function renderNight() {
   document.getElementById("nightExplain").textContent = n.enabled
     ? `${n.temp}° fra ${n.start} (fredag og lørdag fra ${n.weekend_start}) til ${n.end}. Etterpå går ønsket temp tilbake til «Mål etter utetemperatur» av seg selv.` + (S.targetMode === "night" ? " Nattsenking pågår nå." : "")
     : "Av — samme mål hele døgnet.";
+  const ph = n.preheat !== false;
+  const pb = document.getElementById("preheatBtn");
+  pb.textContent = ph ? "PÅ" : "AV"; pb.classList.toggle("on", ph);
+  const plan = S.preheat, pe = document.getElementById("preheatPlan");
+  const hhmm = iso => new Date(iso).toLocaleTimeString("no-NO", {hour:"2-digit", minute:"2-digit"});
+  pe.textContent = (n.enabled && ph && plan)
+    ? `Plan nå: starter ca. ${hhmm(plan.start)} for å være varm kl. ${hhmm(plan.ready)} — ${plan.delta}° på ~${plan.minutes} min `
+      + (plan.sessions ? `(${plan.min_per_deg} min/°C fra ${plan.sessions} oppvarminger${plan.similar ? " med lignende utetemp" : ""})` : "(standardanslag — ingen data ennå)")
+    : (n.enabled && ph ? (S.targetMode === "night" ? "" : "Forvarmingen beregnes i løpet av natta.") : "");
   const rt = document.getElementById("outdoorRuleTxt");
   if (rt && n.enabled && S.outdoorRule) rt.textContent += ` · natt ${n.temp}° ${n.start}–${n.end}`;
 }
