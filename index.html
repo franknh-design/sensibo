@@ -153,6 +153,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .rule-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .rule-btn{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
 .rule-btn.on{color:var(--accent);border-color:rgba(0,212,170,0.35)}
+.night-times{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.night-times input{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:13px;color:var(--accent);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 8px;color-scheme:dark}
 .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .log-head .log-title{margin-bottom:0}
 .log-filter{display:flex;gap:4px}
@@ -550,6 +552,29 @@ input[type=time]{color-scheme:dark}
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Nattsenking</span>
+        <button class="rule-btn" id="nightEnabledBtn" onclick="saveNight({enabled: !(S.night && S.night.enabled)})">PÅ</button>
+      </div>
+      <div style="padding:18px;display:grid;gap:14px">
+        <div>
+          <div class="field-label">Nattetemp</div>
+          <div class="temp-picker">
+            <button onclick="saveNight({temp: S.night.temp - 1})">−</button>
+            <div class="val" id="nightTemp">20°</div>
+            <button onclick="saveNight({temp: S.night.temp + 1})">+</button>
+          </div>
+        </div>
+        <div class="night-times">
+          <label><div class="field-label">Fra (søn–tor)</div><input type="time" id="nightStart" onchange="saveNight({start: this.value})"></label>
+          <label><div class="field-label">Fra (fre/lør)</div><input type="time" id="nightWeekend" onchange="saveNight({weekend_start: this.value})"></label>
+          <label><div class="field-label">Til</div><input type="time" id="nightEnd" onchange="saveNight({end: this.value})"></label>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="nightExplain"></div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">System</div>
       <div style="padding:18px;display:grid;gap:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -736,6 +761,7 @@ function applyStatus(d) {
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; renderNight(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
       if (ho) ho.textContent = (d.hold_offset >= 0 ? "+" : "") + d.hold_offset;
@@ -845,6 +871,38 @@ function adjOutdoorRule(key, delta) {
       setTimeout(fetchStatus, 1000);
     }).catch(() => showToast("Kunne ikke lagre","err"));
   }, 700);
+}
+
+function renderNight() {
+  const n = S.night; if (!n) return;
+  const btn = document.getElementById("nightEnabledBtn");
+  btn.textContent = n.enabled ? "PÅ" : "AV"; btn.classList.toggle("on", n.enabled);
+  document.getElementById("nightTemp").textContent = n.temp + "°";
+  for (const [id, k] of [["nightStart","start"],["nightWeekend","weekend_start"],["nightEnd","end"]]) {
+    const el = document.getElementById(id);
+    if (document.activeElement !== el) el.value = n[k];
+  }
+  document.getElementById("nightExplain").textContent = n.enabled
+    ? `${n.temp}° fra ${n.start} (fredag og lørdag fra ${n.weekend_start}) til ${n.end}. Etterpå går ønsket temp tilbake til «Mål etter utetemperatur» av seg selv.` + (S.targetMode === "night" ? " Nattsenking pågår nå." : "")
+    : "Av — samme mål hele døgnet.";
+  const rt = document.getElementById("outdoorRuleTxt");
+  if (rt && n.enabled && S.outdoorRule) rt.textContent += ` · natt ${n.temp}° ${n.start}–${n.end}`;
+}
+
+function saveNight(change) {
+  if (!S.night) return;
+  S.night = {...S.night, ...change};
+  S.night.temp = Math.max(16, Math.min(28, S.night.temp));
+  S.nightSaving = true;
+  renderNight();
+  fetch(`${API}/api/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({night: S.night})
+  }).then(r => r.json()).then(d => {
+    S.nightSaving = false;
+    showToast(d.ok ? "Lagret ✓" : (d.error || "Kunne ikke lagre"), d.ok ? "ok" : "err");
+    setTimeout(fetchStatus, 800);
+  }).catch(() => { S.nightSaving = false; showToast("Kunne ikke lagre","err"); });
 }
 
 function toggleOutdoorRule() { adjOutdoorRule("enabled"); }

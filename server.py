@@ -532,25 +532,66 @@ def get_outdoor_rule():
         r["cold_below"] = min(r.get("cold_below", r["warm_from"] - 0.5), r["warm_from"])
     return r
 
+# Nattsenking: eget mål om natta; om morgenen går målet tilbake til dagregelen (utetemp).
+# weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
+NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0}
+
+def get_night():
+    return {**NIGHT_DEFAULT, **(cache.get("night") or {})}
+
+def _hm(txt):
+    h, m = map(int, str(txt).split(":"))
+    return h, m
+
+def in_night(now, n):
+    """Er vi i nattperioden? Natta «tilhører» kvelden den startet (før kl. 12 = gårsdagens kveld)."""
+    evening = (now - timedelta(days=1)).date() if now.hour < 12 else now.date()
+    weekend = evening.weekday() in (4, 5)  # fredag/lørdag kveld
+    sh, sm = _hm(n["weekend_start"] if weekend else n["start"])
+    eh, em = _hm(n["end"])
+    start_day = evening + timedelta(days=1) if sh < 12 else evening
+    start = datetime(start_day.year, start_day.month, start_day.day, sh, sm, tzinfo=LOCAL_TZ)
+    nxt = evening + timedelta(days=1)
+    end = datetime(nxt.year, nxt.month, nxt.day, eh, em, tzinfo=LOCAL_TZ)
+    return start <= now < end
+
 def outdoor_rule_check(force=False):
-    """Setter ønsket temp etter utetemperaturen når den krysser terskelen (eller når regelen slås på).
-    Ett utslag per bytte, så timeplan/manuelle endringer står seg til neste bytte."""
-    rule = get_outdoor_rule()
+    """Bestemmer ønsket temp: nattsenking om natta, ellers mål etter utetemperatur.
+    Ett utslag per skifte (natt↔dag, mild↔kaldt), så timeplan/manuelle endringer står seg til neste skifte."""
+    rule, night = get_outdoor_rule(), get_night()
     out = cache.get("outdoor_temp")
-    if not rule["enabled"] or out is None:
+
+    # Hold mild/kaldt oppdatert også om natta, så morgenen starter med riktig mål
+    bracket = cache.get("outdoor_bracket")
+    if rule["enabled"] and out is not None:
+        if bracket == "cold":
+            bracket = "warm" if out >= rule["warm_from"] else "cold"
+        else:
+            bracket = "cold" if out < rule["cold_below"] else "warm"
+        cache["outdoor_bracket"] = bracket
+
+    is_night = night["enabled"] and in_night(datetime.now(LOCAL_TZ), night)
+    mode = "night" if is_night else (bracket if rule["enabled"] else "day")
+    prev = cache.get("target_mode")
+    if mode == prev and not force:
         return
-    prev = cache.get("outdoor_bracket")
-    if prev == "cold":
-        bracket = "warm" if out >= rule["warm_from"] else "cold"
-    else:
-        bracket = "cold" if out < rule["cold_below"] else "warm"
-    if bracket == prev and not force:
-        return
-    cache["outdoor_bracket"] = bracket
-    temp = rule["warm_temp"] if bracket == "warm" else rule["cold_temp"]
-    if cache.get("auto_target_temp") != temp:
+    cache["target_mode"] = mode
+
+    if mode == "night":
+        if prev != "night":
+            cache["day_target"] = cache.get("auto_target_temp")  # for dag uten utetemp-regel
+        temp, why = night["temp"], "Nattsenking"
+    elif mode in ("warm", "cold"):
+        temp = rule["warm_temp"] if mode == "warm" else rule["cold_temp"]
+        why = f"{'Dag: ' if prev == 'night' else ''}Ute {out:.1f}°C" if out is not None else "Dag"
+    else:  # dag uten utetemp-regel: tilbake til det som gjaldt før natta
+        temp, why = cache.get("day_target") or cache.get("auto_target_temp"), "Dag"
+        if prev != "night":
+            save_state()
+            return
+    if temp is not None and cache.get("auto_target_temp") != temp:
         cache["auto_target_temp"] = temp
-        add_event("setting", f"Ute {out:.1f}°C → ønsket temp {temp:g}°C")
+        add_event("setting", f"{why} → ønsket temp {temp:g}°C")
         cache["last_sensibo"] = 0
     save_state()
 
@@ -673,7 +714,8 @@ def load_history():
 # ============================================================
 STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
-    "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket"
+    "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
+    "night", "target_mode", "day_target"
 ]
 
 def save_state():
@@ -852,6 +894,8 @@ class Handler(BaseHTTPRequestHandler):
                 "auto_paused_until": cache.get("external_pause_until"),
                 "hold_offset": cache.get("hold_offset", 1),
                 "outdoor_rule": get_outdoor_rule(),
+                "night": get_night(),
+                "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
                 "ts": datetime.now().isoformat()
             })
@@ -916,6 +960,21 @@ class Handler(BaseHTTPRequestHandler):
                 # Nye grenser/temperaturer skal gjelde med en gang, ikke først ved neste kryssing
                 cache.pop("outdoor_bracket", None)
                 outdoor_rule_check(force=True)
+            if "night" in body and isinstance(body["night"], dict):
+                n = {**get_night(), **body["night"]}
+                try:
+                    for k in ("start", "weekend_start", "end"):
+                        h, m = _hm(n[k]); assert 0 <= h < 24 and 0 <= m < 60
+                        n[k] = f"{h:02d}:{m:02d}"
+                    new_night = {"enabled": bool(n["enabled"]), "start": n["start"], "weekend_start": n["weekend_start"],
+                                 "end": n["end"], "temp": max(16, min(28, round(float(n["temp"]))))}
+                except (ValueError, AssertionError, TypeError):
+                    self.send_json({"ok": False, "error": "Ugyldig klokkeslett"}); return
+                if new_night != get_night():
+                    cache["night"] = new_night
+                    add_event("setting", "Nattsenking av" if not new_night["enabled"] else
+                              f"Nattsenking: {new_night['temp']:g}°C fra {new_night['start']} (helg {new_night['weekend_start']}) til {new_night['end']}")
+                    outdoor_rule_check(force=True)
             if "target_temp" in body or body.get("auto_enabled"):
                 resume_from_pause("endring i appen")
             if "target_temp" in body:
