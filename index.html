@@ -605,12 +605,13 @@ input[type=time]{color-scheme:dark}
       <div style="padding:18px;display:grid;gap:14px">
         <div>
           <div class="field-label">Normalinnstilling vifte</div>
-          <div class="fan-grid">
-            <button class="fan-btn" onclick="setNormalFan(this,'quiet')">Stille</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'low')">Lav</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'medium')">Middels</button>
-            <button class="fan-btn active" id="normalFanBtn-medium_high" onclick="setNormalFan(this,'medium_high')">Mid-Høy</button>
-            <button class="fan-btn" onclick="setNormalFan(this,'high')">Høy</button>
+          <div class="fan-grid" id="normalFanGrid" style="grid-template-columns:repeat(3,1fr)">
+            <button class="fan-btn" data-fan="auto" onclick="setNormalFan(this,'auto')">Auto</button>
+            <button class="fan-btn" data-fan="quiet" onclick="setNormalFan(this,'quiet')">Stille</button>
+            <button class="fan-btn" data-fan="low" onclick="setNormalFan(this,'low')">Lav</button>
+            <button class="fan-btn" data-fan="medium" onclick="setNormalFan(this,'medium')">Middels</button>
+            <button class="fan-btn active" data-fan="medium_high" onclick="setNormalFan(this,'medium_high')">Mid-Høy</button>
+            <button class="fan-btn" data-fan="high" onclick="setNormalFan(this,'high')">Høy</button>
           </div>
         </div>
         <div>
@@ -772,7 +773,8 @@ function applyStatus(d) {
   // Synkroniser alle verdier fra server
   if (d.normal_fan != null) {
     settings.normalFan = d.normal_fan;
-      }
+    document.querySelectorAll("#normalFanGrid .fan-btn").forEach(b => b.classList.toggle("active", b.dataset.fan === d.normal_fan));
+  }
   if (d.history != null) {
     // Serveren lagrer CSV-navn (elapsed_min, min_per_deg …) — appen bruker camelCase
     S.history = d.history.map(r => ({
@@ -1530,8 +1532,7 @@ function renderSettingsPage() {
 }
 
 function setNormalFan(btn, speed) {
-  document.querySelectorAll(".fan-grid .fan-btn").forEach(b=>b.classList.remove("active"));
-  btn.classList.add("active");
+  document.querySelectorAll("#normalFanGrid .fan-btn").forEach(b => b.classList.toggle("active", b === btn));
   settings.normalFan = speed;
     fetch(`${API}/api/settings`, {
     method:"POST", headers:{"Content-Type":"application/json"},
