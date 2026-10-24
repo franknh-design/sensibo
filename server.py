@@ -283,6 +283,22 @@ def detect_external_change(ac):
         cache.pop("auto_heat_start", None)
         add_event("auto", f"Auto pauset (endret utenfor appen) — fortsetter når pumpa endres igjen, senest om {EXTERNAL_PAUSE_HOURS} t")
 
+ALLOWED_MODES = ("heat", "fan")  # kjøling er aldri tillatt — heller ikke «auto»/«dry», som kan kjøle
+
+def enforce_no_cool(ac):
+    """Setter pumpa tilbake til varme hvis noen har satt den til kjøling (fjernkontroll/Sensibo-appen)."""
+    mode = ac.get("mode")
+    if not ac.get("on") or mode in ALLOWED_MODES or not mode:
+        return
+    uid = get_device_uid()
+    if not uid:
+        return
+    cache["last_command"] = None  # duplikatsperren skal ikke stoppe tilbakestillingen
+    log.warning(f"BLOKKERT: pumpa sto i {mode}-modus — setter tilbake til varme")
+    if sensibo_patch(uid, {"mode": "heat"}, f"Kjøling ikke tillatt ({mode}-modus satt utenfor appen)"):
+        ac["mode"] = "heat"
+        cache["ac_seen"] = {k: ac.get(k) for k in AC_KEYS}
+
 def fetch_sensibo_state():
     """Henter AC-state og romsensor-temperatur i ett API-kall"""
     data = sensibo_get(f"/pods/{SENSIBO_DEVICE_UID}", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
@@ -291,6 +307,7 @@ def fetch_sensibo_state():
     result = data.get("result", {})
     ac = result.get("acState", {})
     detect_external_change(ac)
+    enforce_no_cool(ac)
     cache["ac"] = ac
     cache["last_sensibo"] = time.time()
     check_boost_complete()
