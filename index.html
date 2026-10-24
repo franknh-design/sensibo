@@ -23,6 +23,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
 /* Header */
 .header{padding:56px 24px 20px;display:flex;justify-content:space-between;align-items:flex-start}
+.room-switch{display:flex;gap:4px;margin:0 24px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px}
+.room-switch[hidden]{display:none}
+.room-switch button{flex:1;padding:9px 6px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.room-switch button.active{background:var(--surface2);color:var(--accent)}
 .header-title{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
 .status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background 0.3s;display:inline-block;margin-right:6px}
 .status-dot.online{background:var(--accent);box-shadow:0 0 8px var(--accent)}
@@ -217,6 +221,8 @@ input[type=time]{color-scheme:dark}
       <span id="statusText">kobler til</span>
     </div>
   </div>
+
+  <div class="room-switch" id="roomSwitch" hidden></div>
 
   <div class="cols"><div class="col">
   <!-- Temp ring -->
@@ -676,7 +682,31 @@ input[type=time]{color-scheme:dark}
 <div class="toast" id="toast"></div>
 
 <script>
-const API = window.location.origin;
+// Hver stue er en egen server med egne innstillinger; hovedserveren videresender /r/<id>/
+let ROOM = null;
+try { ROOM = localStorage.getItem("varmeRoom"); } catch(e) {}
+let API = window.location.origin;
+
+async function initRooms() {
+  try {
+    const d = await (await fetch(`${window.location.origin}/api/rooms`)).json();
+    const rooms = d.rooms || [];
+    let cur = rooms.find(r => r.id === ROOM) || rooms.find(r => r.local) || rooms[0];
+    if (cur && !cur.local) API = `${window.location.origin}/r/${cur.id}`;
+    if (rooms.length > 1) {
+      const el = document.getElementById("roomSwitch");
+      el.innerHTML = rooms.map(r =>
+        `<button data-room="${r.id}" class="${r.id === cur.id ? "active" : ""}">${r.name}</button>`).join("");
+      el.onclick = e => {
+        const b = e.target.closest("button");
+        if (!b || b.classList.contains("active")) return;
+        try { localStorage.setItem("varmeRoom", b.dataset.room); } catch(err) {}
+        location.reload();  // ren start — alle felt og innstillinger hentes fra stuens egen server
+      };
+      el.hidden = false;
+    }
+  } catch(e) {}
+}
 const DAYS = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const FAN_LABELS = {auto:"Auto",quiet:"Stille",low:"Lav",medium:"Middels",medium_high:"Mid-Høy",high:"Høy"};
 const NORMAL_FAN = "medium_high";
@@ -702,7 +732,8 @@ const S = {
 };
 
 // ── Init ──
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  await initRooms();
   buildDayGrid();
   renderSchedules();
   renderHistory();

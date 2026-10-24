@@ -26,7 +26,12 @@ load_dotenv()
 # ============================================================
 SENSIBO_API_KEY = os.getenv("SENSIBO_API_KEY", "")
 SENSIBO_DEVICE_NAME = os.getenv("SENSIBO_DEVICE_NAME", "Frank's device AC")
-SENSIBO_DEVICE_UID = os.getenv("SENSIBO_DEVICE_UID", "YRqRonRH")  # Hardkodet riktig enhet
+SENSIBO_DEVICE_UID = os.getenv("SENSIBO_DEVICE_UID", "YRqRonRH")  # Frank stue; Vigdis-instansen setter MTBb7tSM
+ROOM_NAME = os.getenv("ROOM_NAME", "Frank stue")
+SENSIBO_POLL_SECONDS = int(os.getenv("SENSIBO_POLL_SECONDS", "90"))
+# Stuene i appen. Hver stue er en egen server-instans med egne innstillinger; hovedinstansen
+# (den uten port) videresender /r/<id>/api/... til de andre på localhost.
+ROOMS = json.loads(os.getenv("ROOMS", "[]")) or [{"id": "main", "name": ROOM_NAME}]
 METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
 METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
 # Utetemperatur fra Hue-sensoren ved kjellerdøra via Home Assistant; met.no er reserve
@@ -65,7 +70,7 @@ cache = {
     "outdoor_forecast": [],
     "last_sensibo": 0,
     "last_metno": 0,
-    "device_uid": "YRqRonRH",  # Hardkodet — kjeller-enhet bCCMwLk4 skal ikke brukes
+    "device_uid": SENSIBO_DEVICE_UID,  # kjeller-enhet bCCMwLk4 skal ikke brukes
     "auto_enabled": False,
     "auto_target_temp": 22.0,
     "hysteresis": 1.0,
@@ -280,7 +285,7 @@ def detect_external_change(ac):
 
 def fetch_sensibo_state():
     """Henter AC-state og romsensor-temperatur i ett API-kall"""
-    data = sensibo_get("/pods/YRqRonRH", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
+    data = sensibo_get(f"/pods/{SENSIBO_DEVICE_UID}", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
     if not data:
         return
     result = data.get("result", {})
@@ -767,7 +772,7 @@ def background_loop():
         except Exception as e:
             log.error(f"Timeplan-feil: {e}")
         now = time.time()
-        if now - cache["last_sensibo"] > 90:
+        if now - cache["last_sensibo"] > SENSIBO_POLL_SECONDS:
             fetch_sensibo_state()
         if now - cache["last_metno"] > 1800:  # 30 min
             fetch_metno()
@@ -966,10 +971,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def proxy_room(self, method, body=None):
+        """Videresender /r/<id>/... til stuens egen instans. Returnerer False hvis stien ikke er en stue-sti."""
+        parts = self.path.split("/", 3)
+        if len(parts) < 4 or parts[1] != "r":
+            return False
+        room = next((r for r in ROOMS if r["id"] == parts[2] and r.get("port")), None)
+        if not room:
+            self.send_json({"ok": False, "error": "Ukjent stue"}, 404)
+            return True
+        try:
+            r = requests.request(method, f"http://127.0.0.1:{room['port']}/{parts[3]}", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=20)
+            self.send_response(r.status_code)
+            self.send_header("Content-Type", r.headers.get("Content-Type", "application/json"))
+            self.send_header("Content-Length", len(r.content))
+            self.end_headers()
+            self.wfile.write(r.content)
+        except Exception as e:
+            log.warning(f"Stue {room['id']} svarer ikke: {type(e).__name__}")
+            self.send_json({"ok": False, "error": f"{room['name']} svarer ikke"}, 502)
+        return True
+
     def do_GET(self):
+        if self.proxy_room("GET"):
+            return
         path = urlparse(self.path).path
 
-        if path == "/" or path == "/index.html":
+        if path == "/api/rooms":
+            self.send_json({"rooms": [{"id": r["id"], "name": r["name"], "local": not r.get("port")} for r in ROOMS]})
+
+        elif path == "/" or path == "/index.html":
             self.serve_file("index.html", "text/html; charset=utf-8")
 
         elif path == "/api/status":
@@ -1004,6 +1036,7 @@ class Handler(BaseHTTPRequestHandler):
                 "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
+                "room_name": ROOM_NAME,
                 "ts": datetime.now().isoformat()
             })
 
@@ -1021,7 +1054,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
+        raw = self.rfile.read(length)
+        if self.proxy_room("POST", raw):
+            return
+        body = json.loads(raw or b"{}")
 
         if path == "/api/command":
             result = self.handle_command(body)
@@ -1198,7 +1234,7 @@ if __name__ == "__main__":
     log.info("=" * 50)
     log.info("2GM Varme backend starter")
     log.info(f"Port: {SERVER_PORT}")
-    log.info(f"Enhet: {SENSIBO_DEVICE_NAME}")
+    log.info(f"Stue: {ROOM_NAME} (Sensibo {SENSIBO_DEVICE_UID})")
     log.info(f"Koordinater: {METNO_LAT}, {METNO_LON}")
     log.info("=" * 50)
 
