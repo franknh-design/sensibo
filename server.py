@@ -36,12 +36,20 @@ ROOMS = json.loads(os.getenv("ROOMS", "[]")) or [{"id": "main", "name": ROOM_NAM
 # Denne instansens stue-id. Appen merker hver endring med X-Room, og vi avviser endringer
 # merket for en annen stue — så Vigdis' innstillinger aldri kan havne hos Frank eller omvendt.
 ROOM_ID = os.getenv("ROOM_ID") or next((r["id"] for r in ROOMS if not r.get("port")), "main")
-METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
-METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
+# Hvor utetemperaturen hentes, per stue (Sensibo-enhet). Låst i koden så en kopiert .env
+# aldri kan gi Vigdis Franks Hue-sensor eller Finnsnes-været.
+OUTDOOR_BY_DEVICE = {
+    "YRqRonRH": {"place": "Finnsnes", "lat": 69.2333, "lon": 17.9833, "ha_sensor": True},     # Frank stue
+    "MTBb7tSM": {"place": "Tromsdalen", "lat": 69.6436, "lon": 18.9950, "ha_sensor": False},  # Vigdis stue
+}
+_outdoor = OUTDOOR_BY_DEVICE.get(SENSIBO_DEVICE_UID) or {
+    "place": os.getenv("METNO_PLACE", ""), "lat": float(os.getenv("METNO_LAT", "69.2333")),
+    "lon": float(os.getenv("METNO_LON", "17.9833")), "ha_sensor": True}
+METNO_PLACE, METNO_LAT, METNO_LON = _outdoor["place"], _outdoor["lat"], _outdoor["lon"]
 # Utetemperatur fra Hue-sensoren ved kjellerdøra via Home Assistant; met.no er reserve
 HA_URL = os.getenv("HA_URL", "").rstrip("/")
 HA_TOKEN = os.getenv("HA_TOKEN", "")
-HA_OUTDOOR_ENTITY = os.getenv("HA_OUTDOOR_ENTITY", "")
+HA_OUTDOOR_ENTITY = os.getenv("HA_OUTDOOR_ENTITY", "") if _outdoor["ha_sensor"] else ""
 SENSOR_MAX_AGE = 3 * 3600      # sensoren regnes som død hvis den ikke har rapportert på 3 t
 SENSOR_POLL_EVERY = 5 * 60
 SENSOR_GRACE = 30 * 60         # HA faller ut korte perioder — behold siste gode verdi så lenge
@@ -1049,6 +1057,8 @@ class Handler(BaseHTTPRequestHandler):
                 "outdoor_forecast": cache.get("outdoor_forecast", [])[:6],
                 "outdoor_source": cache.get("outdoor_source"),
                 "metno_temp": cache.get("metno_temp"),
+                "outdoor_place": METNO_PLACE,
+                "outdoor_has_sensor": bool(HA_URL and HA_TOKEN and HA_OUTDOOR_ENTITY),
                 "ac": cache.get("ac", {}),
                 "prediction": pred,
                 "history_count": len(load_history()),
@@ -1276,7 +1286,8 @@ if __name__ == "__main__":
     log.info("2GM Varme backend starter")
     log.info(f"Port: {SERVER_PORT}")
     log.info(f"Stue: {ROOM_NAME} [{ROOM_ID}] (Sensibo {SENSIBO_DEVICE_UID})")
-    log.info(f"Koordinater: {METNO_LAT}, {METNO_LON}")
+    log.info(f"Koordinater: {METNO_LAT}, {METNO_LON} ({METNO_PLACE or 'fra .env'})"
+             f"{'' if HA_OUTDOOR_ENTITY else ' — ingen Hue-sensor, kun met.no'}")
     log.info("=" * 50)
 
     if not SENSIBO_API_KEY:
