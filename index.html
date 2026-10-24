@@ -24,9 +24,18 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* Header */
 .header{padding:56px 24px 20px;display:flex;justify-content:space-between;align-items:flex-start}
 .room-switch{display:flex;gap:4px;margin:0 24px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px}
-.room-switch[hidden]{display:none}
+.room-switch[hidden],.filter-card[hidden]{display:none}
 .room-switch button{flex:1;padding:9px 6px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s}
 .room-switch button.active{background:var(--surface2);color:var(--accent)}
+.filter-card{margin:0 24px 20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;display:flex;align-items:center;gap:14px}
+.filter-card .fc-main{flex:1;min-width:0}
+.filter-card .fc-title{font-size:13px;font-weight:600}
+.filter-card .fc-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.filter-card .fc-bar{height:4px;border-radius:2px;background:var(--surface2);margin-top:8px;overflow:hidden}
+.filter-card .fc-fill{height:100%;background:var(--accent);transition:width 0.5s}
+.filter-card.due{border-color:var(--warm)}
+.filter-card.due .fc-fill{background:var(--warm)}
+.filter-card button{flex-shrink:0;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
 .header-title{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
 .status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background 0.3s;display:inline-block;margin-right:6px}
 .status-dot.online{background:var(--accent);box-shadow:0 0 8px var(--accent)}
@@ -261,6 +270,16 @@ input[type=time]{color-scheme:dark}
     </div>
   </div>
 
+  <!-- Filterpåminnelse -->
+  <div class="filter-card" id="filterCard" hidden>
+    <div class="fc-main">
+      <div class="fc-title" id="filterTitle">Filtre</div>
+      <div class="fc-sub" id="filterSub"></div>
+      <div class="fc-bar"><div class="fc-fill" id="filterFill" style="width:0"></div></div>
+    </div>
+    <button onclick="filterCleaned()">Filtre rengjort</button>
+  </div>
+
   <!-- Auto toggle -->
   <div class="auto-toggle" id="autoToggle" onclick="toggleAuto()">
     <div>
@@ -305,35 +324,7 @@ input[type=time]{color-scheme:dark}
         </div>
         <button class="rule-btn on" style="margin-top:10px;width:100%" onclick="openNightSettings()">Juster nattsenking og mål etter utetemp ›</button>
       </div>
-      <div>
-        <div class="field-label">Planlagte tidspunkter</div>
-        <div class="schedule-list" id="scheduleList">
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">Ingen tidspunkter lagt til</div>
-        </div>
-      </div>
-      <div class="add-box">
-        <div class="add-box-title">Legg til tidspunkt</div>
-        <div class="field-row">
-          <div>
-            <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Klokkeslett</div>
-            <input type="time" class="time-input" id="newTime" value="07:00">
-          </div>
-          <div>
-            <div class="field-label">Temp</div>
-            <div class="temp-picker">
-              <button onclick="adj('sched',-1)">−</button>
-              <div class="val" id="schedPicker">22°</div>
-              <button onclick="adj('sched',1)">+</button>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Dager</div>
-          <div class="day-grid" id="dayGrid"></div>
-        </div>
-        <button class="send-btn" style="width:100%;padding:12px" onclick="addSchedule()">+ Legg til</button>
-        <button class="send-btn" id="autoBtn" onclick="toggleAuto()" style="width:100%">Aktiver auto</button>
-      </div>
+      <button class="send-btn" id="autoBtn" onclick="toggleAuto()" style="width:100%">Aktiver auto</button>
     </div>
   </div>
 
@@ -408,28 +399,6 @@ input[type=time]{color-scheme:dark}
 
 
   </div><div class="col">
-  <!-- Learning -->
-  <div class="learn-panel">
-    <div class="learn-header">
-      <div class="learn-title">Læringsmotor</div>
-      <div class="learn-badge" id="learnBadge">0 sesjoner</div>
-    </div>
-    <div class="learn-body">
-      <div class="learn-stats">
-        <div class="learn-stat">
-          <div class="learn-stat-label">Snitt oppvarming</div>
-          <div class="learn-stat-val" id="avgHeat">—</div>
-        </div>
-        <div class="learn-stat">
-          <div class="learn-stat-label">Siste sesjon</div>
-          <div class="learn-stat-val" id="lastSess">—</div>
-        </div>
-      </div>
-      <div style="font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Siste sesjoner (min/°C)</div>
-      <canvas id="histChart" style="width:100%;height:60px"></canvas>
-    </div>
-  </div>
-
   <!-- Log -->
   <div class="log-section">
     <div class="log-head">
@@ -623,6 +592,14 @@ input[type=time]{color-scheme:dark}
           </div>
         </div>
         <div>
+          <div class="field-label">Rens filtrene hver</div>
+          <div class="temp-picker">
+            <button onclick="adjFilterDays(-7)">−</button>
+            <div class="val" id="filterDaysVal">28 d</div>
+            <button onclick="adjFilterDays(7)">+</button>
+          </div>
+        </div>
+        <div>
           <div class="field-label">Hysteresis — når oppvarming starter</div>
           <div class="temp-picker">
             <button onclick="adjSetting('hysteresis',-0.1)">−</button>
@@ -797,7 +774,42 @@ async function sendCmd(cmd) {
 }
 
 // ── Apply status from API ──
+function renderFilter(f) {
+  if (!f) return;
+  S.filter = f;
+  const left = f.days_left, card = document.getElementById("filterCard");
+  card.hidden = false;
+  card.classList.toggle("due", left <= 0);
+  document.getElementById("filterTitle").textContent =
+    left > 1 ? `Rens filtrene om ${left} dager` : left === 1 ? "Rens filtrene i morgen"
+    : left === 0 ? "Rens filtrene i dag" : `Filtrene skulle vært rengjort for ${-left} dager siden`;
+  const last = new Date(f.last_cleaned + "T12:00").toLocaleDateString("no-NO", {day:"numeric", month:"long"});
+  document.getElementById("filterSub").textContent = `Sist rengjort ${last} · hver ${f.interval_days}. dag`;
+  document.getElementById("filterFill").style.width = Math.max(0, Math.min(100, 100 * (1 - left / f.interval_days))) + "%";
+  document.getElementById("filterDaysVal").textContent = f.interval_days + " d";
+}
+
+async function filterCleaned() {
+  try {
+    const r = await fetch(`${API}/api/command`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({type:"filter_cleaned"})});
+    const d = await r.json();
+    if (d.ok) { renderFilter(d.filter); showToast("Bra! Nedtellingen starter på nytt ✓","ok"); }
+    else showToast("Feil: " + d.error, "err");
+  } catch(e) { showToast("Nettverksfeil","err"); }
+}
+
+let _filterSave = null;
+function adjFilterDays(delta) {
+  if (!S.filter) return;
+  const days = Math.max(7, Math.min(120, S.filter.interval_days + delta));
+  renderFilter({...S.filter, interval_days: days, days_left: S.filter.days_left + (days - S.filter.interval_days)});
+  clearTimeout(_filterSave);
+  _filterSave = setTimeout(() => fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({filter:{interval_days: days}})})
+    .then(() => { showToast("Filterintervall lagret ✓","ok"); fetchStatus(); }).catch(() => showToast("Kunne ikke lagre","err")), 700);
+}
+
 function applyStatus(d) {
+  renderFilter(d.filter);
   // Stuenavnet kommer fra serveren som faktisk svarte — da ser man alltid hvilken stue man styrer
   if (d.room_name) document.getElementById("roomTitle").textContent = " · " + d.room_name;
   if (ROOM_ID && d.room_id && d.room_id !== ROOM_ID) { setOnline(false); document.getElementById("statusText").textContent = "feil stue"; return; }
@@ -1194,7 +1206,7 @@ function updateBoostStatus() {
 
 function updatePickerDisplays() {
   document.getElementById("targetPicker").textContent = S.targetTemp+"°";
-  document.getElementById("schedPicker").textContent = S.schedTemp+"°";
+  const sp = document.getElementById("schedPicker"); if (sp) sp.textContent = S.schedTemp+"°";
   document.getElementById("boostPicker").textContent = S.boostTemp+"°";
 }
 
@@ -1208,6 +1220,7 @@ function selFan(btn, speed) {
 // ── Day grid ──
 function buildDayGrid() {
   const grid = document.getElementById("dayGrid");
+  if (!grid) return;  // timeplan har egen side
   DAYS.forEach((d,i) => {
     const btn = document.createElement("button");
     btn.className = "day-btn"+(S.schedDays.includes(i)?" active":"");
@@ -1242,6 +1255,7 @@ function dayStr(days) {
 
 function renderSchedules() {
   const list = document.getElementById("scheduleList");
+  if (!list) return;  // timeplan har egen side
   if (!S.schedules.length) {
     list.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">Ingen tidspunkter lagt til</div>';
     return;
@@ -1272,6 +1286,7 @@ function removeSchedule(i) {
 // ── History ──
 function renderHistory() {
   const h = S.history;
+  if (!document.getElementById("learnBadge")) return;  // læring har egen side
   document.getElementById("learnBadge").textContent = h.length+" sesjoner";
   if (!h.length) {
     document.getElementById("avgHeat").textContent = "—";

@@ -35,6 +35,11 @@ SENSIBO_POLL_SECONDS = int(os.getenv("SENSIBO_POLL_SECONDS", "90"))
 ROOMS = json.loads(os.getenv("ROOMS", "[]")) or [{"id": "main", "name": ROOM_NAME}]
 # Denne instansens stue-id. Appen merker hver endring med X-Room, og vi avviser endringer
 # merket for en annen stue — så Vigdis' innstillinger aldri kan havne hos Frank eller omvendt.
+# Push (ntfy) — eget emne per stue, så hver får bare sine egne varsler
+NTFY_URL = os.getenv("NTFY_URL", "").rstrip("/")
+NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+FILTER_DAYS_DEFAULT = int(os.getenv("FILTER_DAYS", "28"))
 ROOM_ID = os.getenv("ROOM_ID") or next((r["id"] for r in ROOMS if not r.get("port")), "main")
 # Hvor utetemperaturen hentes, per stue (Sensibo-enhet). Låst i koden så en kopiert .env
 # aldri kan gi Vigdis Franks Hue-sensor eller Finnsnes-været.
@@ -787,6 +792,56 @@ def schedule_check():
     add_event("schedule", f"Timeplan {at:%H:%M}: ønsket temp → {cache['auto_target_temp']:g}°C")
     cache["last_sensibo"] = 0  # hent status og la auto-styringen reagere med en gang
 
+# ============================================================
+# FILTERPÅMINNELSE
+# ============================================================
+FILTER_PUSH_HOUR = 9          # push sendes tidligst kl. 09 norsk tid
+FILTER_PUSH_BEFORE = 2        # forvarsel 2 dager før
+FILTER_REPEAT_DAYS = 3        # deretter hver 3. dag til filtrene er rengjort
+
+def push(title, message, tags="", priority=3):
+    if not (NTFY_URL and NTFY_TOPIC):
+        return False
+    try:
+        headers = {"Title": title.encode("utf-8"), "Tags": tags, "Priority": str(priority)}
+        if NTFY_TOKEN:
+            headers["Authorization"] = f"Bearer {NTFY_TOKEN}"
+        r = requests.post(f"{NTFY_URL}/{NTFY_TOPIC}", data=message.encode("utf-8"), headers=headers, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        log.warning(f"Push feilet: {getattr(getattr(e, 'response', None), 'status_code', type(e).__name__)}")
+        return False
+
+def get_filter():
+    f = {"interval_days": FILTER_DAYS_DEFAULT, "last_cleaned": None, **(cache.get("filter") or {})}
+    if not f["last_cleaned"]:  # første gang: nedtellingen starter i dag
+        f["last_cleaned"] = datetime.now(LOCAL_TZ).date().isoformat()
+        cache["filter"] = f
+        save_state()
+    due = datetime.fromisoformat(f["last_cleaned"]).date() + timedelta(days=f["interval_days"])
+    return {**f, "due": due.isoformat(), "days_left": (due - datetime.now(LOCAL_TZ).date()).days}
+
+def filter_check():
+    f = get_filter()
+    now = datetime.now(LOCAL_TZ)
+    today = now.date().isoformat()
+    if now.hour < FILTER_PUSH_HOUR or cache.get("filter_push_day") == today:
+        return
+    left = f["days_left"]
+    if left == FILTER_PUSH_BEFORE:
+        msg = f"Filtrene i {ROOM_NAME} bør rengjøres om {left} dager."
+    elif left == 0:
+        msg = f"I dag er det {f['interval_days']} dager siden filtrene i {ROOM_NAME} ble rengjort. Trykk «Filtre rengjort» i varme-appen når det er gjort."
+    elif left < 0 and (-left) % FILTER_REPEAT_DAYS == 0:
+        msg = f"Filtrene i {ROOM_NAME} skulle vært rengjort for {-left} dager siden."
+    else:
+        return
+    cache["filter_push_day"] = today
+    save_state()
+    ok = push(f"Rens filtrene — {ROOM_NAME}", msg, tags="broom", priority=4 if left < 0 else 3)
+    add_event("setting", f"Filterpåminnelse {'sendt' if ok else 'IKKE sendt (push feilet)'}: {msg}")
+
 def hourly_status():
     """Ett øyeblikksbilde i timen: rom, ute og hva pumpa står på."""
     hour = datetime.now(LOCAL_TZ).strftime("%Y-%m-%dT%H")
@@ -815,6 +870,10 @@ def background_loop():
             outdoor_rule_check()
         except Exception as e:
             log.error(f"Utetemp-regel-feil: {e}")
+        try:
+            filter_check()
+        except Exception as e:
+            log.error(f"Filter-feil: {e}")
         try:
             hourly_status()
         except Exception as e:
@@ -857,7 +916,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset"
+    "stove", "stove_active", "stove_saved_offset", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1081,6 +1140,7 @@ class Handler(BaseHTTPRequestHandler):
                 "events": recent_events(hours=48, limit=500),
                 "room_name": ROOM_NAME,
                 "room_id": ROOM_ID,
+                "filter": get_filter(),
                 "ts": datetime.now().isoformat()
             })
 
@@ -1152,6 +1212,12 @@ class Handler(BaseHTTPRequestHandler):
                 # Nye grenser/temperaturer skal gjelde med en gang, ikke først ved neste kryssing
                 cache.pop("outdoor_bracket", None)
                 outdoor_rule_check(force=True)
+            if "filter" in body and isinstance(body["filter"], dict) and "interval_days" in body["filter"]:
+                f = get_filter()
+                days = max(7, min(120, int(body["filter"]["interval_days"])))
+                if days != f["interval_days"]:
+                    cache["filter"] = {"interval_days": days, "last_cleaned": f["last_cleaned"]}
+                    add_event("setting", f"Filterintervall: {days} dager")
             if "stove" in body and isinstance(body["stove"], dict):
                 st = {**get_stove(), **body["stove"]}
                 off = max(20, min(45, round(float(st["off_above"]))))
@@ -1209,6 +1275,14 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": False, "error": "Finner ikke Sensibo-enhet"}
 
         cmd_type = cmd.get("type")
+        if cmd_type == "filter_cleaned":  # rører ikke pumpa — skal ikke oppheve en auto-pause
+            f = get_filter()
+            cache["filter"] = {"interval_days": f["interval_days"], "last_cleaned": datetime.now(LOCAL_TZ).date().isoformat()}
+            cache["filter_push_day"] = None
+            save_state()
+            add_event("setting", f"Filtre rengjort — neste om {f['interval_days']} dager")
+            return {"ok": True, "filter": get_filter()}
+
         resume_from_pause("handling i appen")
 
         if cmd_type == "power":
