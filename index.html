@@ -522,6 +522,14 @@ input[type=time]{color-scheme:dark}
             <button onclick="saveStove({off_above: S.stove.off_above + 1})">+</button>
           </div>
         </div>
+        <div>
+          <div class="field-label">Slå på pumpa igjen når temperaturen går under</div>
+          <div class="temp-picker">
+            <button onclick="saveStove({on_below: S.stove.on_below - 1})">−</button>
+            <div class="val" id="stoveOnBelow">25°</div>
+            <button onclick="saveStove({on_below: S.stove.on_below + 1})">+</button>
+          </div>
+        </div>
         <div style="font-size:10px;color:var(--muted);line-height:1.6" id="stoveExplain"></div>
       </div>
     </div>
@@ -684,15 +692,16 @@ input[type=time]{color-scheme:dark}
 
 <script>
 // Hver stue er en egen server med egne innstillinger; hovedserveren videresender /r/<id>/
+// Appen åpner alltid på stua til den som er logget inn; et bytte huskes bare til appen lukkes.
 let ROOM = null;
-try { ROOM = localStorage.getItem("varmeRoom"); } catch(e) {}
+try { ROOM = sessionStorage.getItem("varmeRoom"); } catch(e) {}
 let API = window.location.origin;
 
 async function initRooms() {
   try {
     const d = await (await fetch(`${window.location.origin}/api/rooms`)).json();
     const rooms = d.rooms || [];
-    let cur = rooms.find(r => r.id === ROOM) || rooms.find(r => r.local) || rooms[0];
+    let cur = rooms.find(r => r.id === ROOM) || rooms.find(r => r.id === d.default) || rooms.find(r => r.local) || rooms[0];
     if (cur && !cur.local) API = `${window.location.origin}/r/${cur.id}`;
     if (rooms.length > 1) {
       const el = document.getElementById("roomSwitch");
@@ -701,7 +710,7 @@ async function initRooms() {
       el.onclick = e => {
         const b = e.target.closest("button");
         if (!b || b.classList.contains("active")) return;
-        try { localStorage.setItem("varmeRoom", b.dataset.room); } catch(err) {}
+        try { sessionStorage.setItem("varmeRoom", b.dataset.room); } catch(err) {}
         location.reload();  // ren start — alle felt og innstillinger hentes fra stuens egen server
       };
       el.hidden = false;
@@ -965,9 +974,10 @@ function renderStove() {
   const b = document.getElementById("stoveEnabledBtn");
   b.textContent = st.enabled ? "PÅ" : "AV"; b.classList.toggle("on", st.enabled);
   document.getElementById("stoveOffAbove").textContent = st.off_above + "°";
+  document.getElementById("stoveOnBelow").textContent = st.on_below + "°";
   document.getElementById("stoveExplain").textContent = !st.enabled ? "Av — pumpa styres som vanlig selv om ovnen fyrer."
-    : (S.stoveActive ? `🔥 Vedovnen fyrer nå — pumpa er av til sensoren er under ${st.off_above - 1}°. `
-                     : "") + `Pumpa slås av over ${st.off_above}° og auto tar over igjen under ${st.off_above - 1}°. Gjelder i auto-modus.`;
+    : (S.stoveActive ? `🔥 Vedovnen fyrer nå — pumpa er av til sensoren er under ${st.on_below}°. `
+                     : "") + `Pumpa slås av over ${st.off_above}° og slås på igjen (auto tar over) under ${st.on_below}°. Gjelder i auto-modus.`;
   updateAutoToggleUI();
 }
 
@@ -976,6 +986,7 @@ function saveStove(change) {
   if (!S.stove) return;
   S.stove = {...S.stove, ...change};
   S.stove.off_above = Math.max(20, Math.min(45, S.stove.off_above));
+  S.stove.on_below = Math.max(15, Math.min(S.stove.off_above - 1, S.stove.on_below));
   S.stoveSaving = true;
   renderStove();
   clearTimeout(_stoveSave);
@@ -1041,7 +1052,7 @@ function updateAutoToggleUI() {
   const sub = document.getElementById("autoToggleSub");
   if (S.autoEnabled && S.stoveActive) {
     title.textContent = "🔥 Vedovnen fyrer";
-    sub.textContent = `Pumpa er av · auto fortsetter under ${(S.stove?.off_above ?? 26) - 1}° over ovnen`;
+    sub.textContent = `Pumpa er av · pumpa slås på igjen under ${S.stove?.on_below ?? 25}°`;
   } else if (S.autoEnabled && S.pausedUntil) {
     const til = new Date(S.pausedUntil*1000).toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
     title.textContent = "⏸ Auto pauset";

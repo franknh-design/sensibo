@@ -31,6 +31,7 @@ ROOM_NAME = os.getenv("ROOM_NAME", "Frank stue")
 SENSIBO_POLL_SECONDS = int(os.getenv("SENSIBO_POLL_SECONDS", "90"))
 # Stuene i appen. Hver stue er en egen server-instans med egne innstillinger; hovedinstansen
 # (den uten port) videresender /r/<id>/api/... til de andre på localhost.
+# "emails" på en stue = de som skal havne der når appen åpnes (fra Cloudflare Access).
 ROOMS = json.loads(os.getenv("ROOMS", "[]")) or [{"id": "main", "name": ROOM_NAME}]
 METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
 METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
@@ -478,10 +479,14 @@ def _is_heating(ac):
 
 # ── Vedovn-stopp: sensoren henger på pipa over vedovnen ──
 STOVE_DEFAULT = {"enabled": True, "off_above": 26}
-STOVE_RESUME_BELOW = 1.0   # auto tilbake når sensoren er 1 °C under grensen
+STOVE_RESUME_BELOW = 1.0   # standard: auto tilbake når sensoren er 1 °C under grensen
 
 def get_stove():
-    return {**STOVE_DEFAULT, **(cache.get("stove") or {})}
+    st = {**STOVE_DEFAULT, **(cache.get("stove") or {})}
+    # on_below = når pumpa slås på igjen; må ligge under avslagsgrensen
+    if st.get("on_below") is None or st["on_below"] >= st["off_above"]:
+        st["on_below"] = st["off_above"] - STOVE_RESUME_BELOW
+    return st
 
 def stove_check(uid, current):
     """True = vedovnen fyrer og pumpa skal stå av (auto gjør ingenting annet)."""
@@ -498,7 +503,7 @@ def stove_check(uid, current):
         cache.pop("auto_heat_start", None)
         add_event("auto", f"Vedovnen fyrer ({current:.1f}°C over ovnen > {st['off_above']}°C) — slår av pumpa")
         save_state()
-    elif active and current < st["off_above"] - STOVE_RESUME_BELOW:
+    elif active and current < st["on_below"]:
         stove_end(current, f"{current:.1f}°C over ovnen")
         return False
     if cache.get("stove_active"):
@@ -1016,7 +1021,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/api/rooms":
-            self.send_json({"rooms": [{"id": r["id"], "name": r["name"], "local": not r.get("port")} for r in ROOMS]})
+            # Cloudflare Access legger innlogget e-post på hver forespørsel gjennom tunnelen
+            email = (self.headers.get("Cf-Access-Authenticated-User-Email") or "").strip().lower()
+            mine = next((r["id"] for r in ROOMS if email and email in [e.lower() for e in r.get("emails", [])]), None)
+            default = mine or next((r["id"] for r in ROOMS if not r.get("port")), ROOMS[0]["id"])
+            self.send_json({"rooms": [{"id": r["id"], "name": r["name"], "local": not r.get("port")} for r in ROOMS],
+                            "default": default, "signed_in": bool(email)})
 
         elif path == "/" or path == "/index.html":
             self.serve_file("index.html", "text/html; charset=utf-8")
@@ -1122,10 +1132,12 @@ class Handler(BaseHTTPRequestHandler):
                 outdoor_rule_check(force=True)
             if "stove" in body and isinstance(body["stove"], dict):
                 st = {**get_stove(), **body["stove"]}
-                new_st = {"enabled": bool(st["enabled"]), "off_above": max(20, min(45, round(float(st["off_above"]))))}
+                off = max(20, min(45, round(float(st["off_above"]))))
+                on = max(15, min(off - 1, round(float(st["on_below"]))))
+                new_st = {"enabled": bool(st["enabled"]), "off_above": off, "on_below": on}
                 if new_st != get_stove():
                     cache["stove"] = new_st
-                    add_event("setting", f"Vedovn-stopp: av over {new_st['off_above']}°C" if new_st["enabled"] else "Vedovn-stopp av")
+                    add_event("setting", f"Vedovn-stopp: av over {off}°C, på igjen under {on}°C" if new_st["enabled"] else "Vedovn-stopp av")
                     cache["last_sensibo"] = 0
             if "night" in body and isinstance(body["night"], dict):
                 n = {**get_night(), **body["night"]}
