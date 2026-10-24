@@ -40,6 +40,8 @@ NTFY_URL = os.getenv("NTFY_URL", "").rstrip("/")
 NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 FILTER_DAYS_DEFAULT = int(os.getenv("FILTER_DAYS", "28"))
+# Ny ønsket temp i appen blir ny standard for perioden som gjelder (dag-regelen eller natt), ikke bare til neste skifte
+TARGET_SETS_STANDARD = os.getenv("TARGET_SETS_STANDARD", "") == "1"
 ROOM_ID = os.getenv("ROOM_ID") or next((r["id"] for r in ROOMS if not r.get("port")), "main")
 # Hvor utetemperaturen hentes, per stue (Sensibo-enhet). Låst i koden så en kopiert .env
 # aldri kan gi Vigdis Franks Hue-sensor eller Finnsnes-været.
@@ -681,6 +683,24 @@ def preheat_plan(day_temp, end):
     return {"start": end - timedelta(minutes=minutes), "ready": end, "minutes": minutes,
             "delta": round(delta, 1), "min_per_deg": round(mpd, 1), "sessions": n, "similar": similar}
 
+def make_standard(new_t):
+    """Gjør en manuell endring av ønsket temp til ny standard for perioden som gjelder nå."""
+    mode = cache.get("target_mode")
+    if mode == "night":
+        cache["night"] = {**get_night(), "temp": new_t}
+        add_event("setting", f"Ny standard natt: {new_t:g}°C")
+    elif mode in ("warm", "cold"):
+        rule = get_outdoor_rule()
+        delta = new_t - (rule["warm_temp"] if mode == "warm" else rule["cold_temp"])
+        if delta:
+            rule["warm_temp"] = max(16, min(30, rule["warm_temp"] + delta))
+            rule["cold_temp"] = max(16, min(30, rule["cold_temp"] + delta))
+            cache["outdoor_rule"] = rule
+            add_event("setting", f"Ny standard dag: {rule['warm_temp']:g}°C (mildt) / {rule['cold_temp']:g}°C (kaldt)")
+    else:
+        cache["day_target"] = new_t
+        add_event("setting", f"Ny standard dag: {new_t:g}°C")
+
 def outdoor_rule_check(force=False):
     """Bestemmer ønsket temp: nattsenking om natta, ellers mål etter utetemperatur.
     Ett utslag per skifte (natt↔dag, mild↔kaldt), så timeplan/manuelle endringer står seg til neste skifte."""
@@ -1249,6 +1269,8 @@ class Handler(BaseHTTPRequestHandler):
                 new_t = max(16, min(30, float(body["target_temp"])))
                 if new_t != cache.get("auto_target_temp"):
                     add_event("setting", f"Ønsket temp satt til {new_t:g}°C i appen")
+                    if TARGET_SETS_STANDARD:
+                        make_standard(new_t)
                 cache["auto_target_temp"] = new_t
                 log.info(f"Ønsket temp satt til {cache['auto_target_temp']}°C")
             if "hysteresis" in body:

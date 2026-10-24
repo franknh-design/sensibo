@@ -1508,7 +1508,7 @@ function adj(type, delta) {
     fetch(`${API}/api/settings`, {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({target_temp: S.targetTemp})
-    }).catch(()=>{});
+    }).then(() => { clearTimeout(S._tRefresh); S._tRefresh = setTimeout(fetchStatus, 1500); }).catch(()=>{});
   }
 }
 
