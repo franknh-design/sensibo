@@ -33,6 +33,9 @@ SENSIBO_POLL_SECONDS = int(os.getenv("SENSIBO_POLL_SECONDS", "90"))
 # (den uten port) videresender /r/<id>/api/... til de andre på localhost.
 # "emails" på en stue = de som skal havne der når appen åpnes (fra Cloudflare Access).
 ROOMS = json.loads(os.getenv("ROOMS", "[]")) or [{"id": "main", "name": ROOM_NAME}]
+# Denne instansens stue-id. Appen merker hver endring med X-Room, og vi avviser endringer
+# merket for en annen stue — så Vigdis' innstillinger aldri kan havne hos Frank eller omvendt.
+ROOM_ID = os.getenv("ROOM_ID") or next((r["id"] for r in ROOMS if not r.get("port")), "main")
 METNO_LAT = float(os.getenv("METNO_LAT", "69.2333"))
 METNO_LON = float(os.getenv("METNO_LON", "17.9833"))
 # Utetemperatur fra Hue-sensoren ved kjellerdøra via Home Assistant; met.no er reserve
@@ -1003,8 +1006,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Ukjent stue"}, 404)
             return True
         try:
+            headers = {"Content-Type": "application/json"}
+            if self.headers.get("X-Room"):
+                headers["X-Room"] = self.headers["X-Room"]
             r = requests.request(method, f"http://127.0.0.1:{room['port']}/{parts[3]}", data=body,
-                                 headers={"Content-Type": "application/json"}, timeout=20)
+                                 headers=headers, timeout=20)
             self.send_response(r.status_code)
             self.send_header("Content-Type", r.headers.get("Content-Type", "application/json"))
             self.send_header("Content-Length", len(r.content))
@@ -1064,6 +1070,7 @@ class Handler(BaseHTTPRequestHandler):
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
                 "room_name": ROOM_NAME,
+                "room_id": ROOM_ID,
                 "ts": datetime.now().isoformat()
             })
 
@@ -1083,6 +1090,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
         if self.proxy_room("POST", raw):
+            return
+        want = self.headers.get("X-Room")
+        if want and want != ROOM_ID:
+            log.warning(f"Avviste endring merket for stue «{want}» (dette er {ROOM_ID}): {path}")
+            self.send_json({"ok": False, "error": "Feil stue — last inn appen på nytt"}, 409)
             return
         body = json.loads(raw or b"{}")
 
@@ -1263,7 +1275,7 @@ if __name__ == "__main__":
     log.info("=" * 50)
     log.info("2GM Varme backend starter")
     log.info(f"Port: {SERVER_PORT}")
-    log.info(f"Stue: {ROOM_NAME} (Sensibo {SENSIBO_DEVICE_UID})")
+    log.info(f"Stue: {ROOM_NAME} [{ROOM_ID}] (Sensibo {SENSIBO_DEVICE_UID})")
     log.info(f"Koordinater: {METNO_LAT}, {METNO_LON}")
     log.info("=" * 50)
 

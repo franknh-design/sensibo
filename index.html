@@ -213,7 +213,7 @@ input[type=time]{color-scheme:dark}
   <!-- Header -->
   <div class="header">
     <div>
-      <div class="header-title">Varme</div>
+      <div class="header-title">Varme<span id="roomTitle"></span></div>
       <div style="font-size:10px;color:var(--muted);margin-top:4px" id="lastUpdate">Oppdaterer...</div>
     </div>
     <div style="display:flex;align-items:center;font-size:11px;color:var(--muted)">
@@ -696,12 +696,31 @@ input[type=time]{color-scheme:dark}
 let ROOM = null;
 try { ROOM = sessionStorage.getItem("varmeRoom"); } catch(e) {}
 let API = window.location.origin;
+let ROOM_ID = null;  // stua appen viser — sendes med hver endring, serveren avviser feil stue
+
+const _fetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  if (ROOM_ID && typeof url === "string" && url.startsWith(API) && (opts.method || "GET").toUpperCase() === "POST")
+    opts = {...opts, headers: {...(opts.headers || {}), "X-Room": ROOM_ID}};
+  return _fetch(url, opts);
+};
 
 async function initRooms() {
-  try {
-    const d = await (await fetch(`${window.location.origin}/api/rooms`)).json();
+  // Ingen stille fallback til en annen stue: prøv igjen til serveren svarer
+  for (let i = 0; ; i++) {
+    try { await loadRooms(); return; }
+    catch(e) { document.getElementById("statusText").textContent = "kobler til"; await new Promise(r => setTimeout(r, Math.min(15000, 2000 * (i + 1)))); }
+  }
+}
+
+async function loadRooms() {
+  {
+    const r = await _fetch(`${window.location.origin}/api/rooms`);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
     const rooms = d.rooms || [];
     let cur = rooms.find(r => r.id === ROOM) || rooms.find(r => r.id === d.default) || rooms.find(r => r.local) || rooms[0];
+    ROOM_ID = cur.id;
     if (cur && !cur.local) API = `${window.location.origin}/r/${cur.id}`;
     if (rooms.length > 1) {
       const el = document.getElementById("roomSwitch");
@@ -715,7 +734,7 @@ async function initRooms() {
       };
       el.hidden = false;
     }
-  } catch(e) {}
+  }
 }
 const DAYS = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const FAN_LABELS = {auto:"Auto",quiet:"Stille",low:"Lav",medium:"Middels",medium_high:"Mid-Høy",high:"Høy"};
@@ -779,6 +798,9 @@ async function sendCmd(cmd) {
 
 // ── Apply status from API ──
 function applyStatus(d) {
+  // Stuenavnet kommer fra serveren som faktisk svarte — da ser man alltid hvilken stue man styrer
+  if (d.room_name) document.getElementById("roomTitle").textContent = " · " + d.room_name;
+  if (ROOM_ID && d.room_id && d.room_id !== ROOM_ID) { setOnline(false); document.getElementById("statusText").textContent = "feil stue"; return; }
   // Synkroniser alle verdier fra server
   if (d.normal_fan != null) {
     settings.normalFan = d.normal_fan;
