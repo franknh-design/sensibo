@@ -600,6 +600,10 @@ input[type=time]{color-scheme:dark}
           </div>
         </div>
         <div>
+          <div class="field-label">Filtrene sist rengjort</div>
+          <input type="date" class="time-input" id="filterLastInput" onchange="setFilterLast(this.value)">
+        </div>
+        <div>
           <div class="field-label">Hysteresis — når oppvarming starter</div>
           <div class="temp-picker">
             <button onclick="adjSetting('hysteresis',-0.1)">−</button>
@@ -787,6 +791,8 @@ function renderFilter(f) {
   document.getElementById("filterSub").textContent = `Sist rengjort ${last} · hver ${f.interval_days}. dag`;
   document.getElementById("filterFill").style.width = Math.max(0, Math.min(100, 100 * (1 - left / f.interval_days))) + "%";
   document.getElementById("filterDaysVal").textContent = f.interval_days + " d";
+  const li = document.getElementById("filterLastInput");
+  if (li && document.activeElement !== li) { li.value = f.last_cleaned; li.max = new Date().toLocaleDateString("sv-SE"); }
 }
 
 async function filterCleaned() {
@@ -796,6 +802,13 @@ async function filterCleaned() {
     if (d.ok) { renderFilter(d.filter); showToast("Bra! Nedtellingen starter på nytt ✓","ok"); }
     else showToast("Feil: " + d.error, "err");
   } catch(e) { showToast("Nettverksfeil","err"); }
+}
+
+function setFilterLast(date) {
+  if (!date) return;
+  fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({filter:{last_cleaned: date}})})
+    .then(r => r.json()).then(d => { showToast(d.ok ? "Dato lagret ✓" : "Feil: " + d.error, d.ok ? "ok" : "err"); fetchStatus(); })
+    .catch(() => showToast("Kunne ikke lagre","err"));
 }
 
 let _filterSave = null;

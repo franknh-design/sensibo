@@ -1232,12 +1232,26 @@ class Handler(BaseHTTPRequestHandler):
                 # Nye grenser/temperaturer skal gjelde med en gang, ikke først ved neste kryssing
                 cache.pop("outdoor_bracket", None)
                 outdoor_rule_check(force=True)
-            if "filter" in body and isinstance(body["filter"], dict) and "interval_days" in body["filter"]:
+            if "filter" in body and isinstance(body["filter"], dict):
                 f = get_filter()
-                days = max(7, min(120, int(body["filter"]["interval_days"])))
-                if days != f["interval_days"]:
-                    cache["filter"] = {"interval_days": days, "last_cleaned": f["last_cleaned"]}
-                    add_event("setting", f"Filterintervall: {days} dager")
+                days, last = f["interval_days"], f["last_cleaned"]
+                if "interval_days" in body["filter"]:
+                    days = max(7, min(120, int(body["filter"]["interval_days"])))
+                    if days != f["interval_days"]:
+                        add_event("setting", f"Filterintervall: {days} dager")
+                if body["filter"].get("last_cleaned"):  # rengjort tidligere enn i dag — ikke fram i tid, maks ett år tilbake
+                    try:
+                        d = datetime.fromisoformat(str(body["filter"]["last_cleaned"])).date()
+                    except ValueError:
+                        self.send_json({"ok": False, "error": "Ugyldig dato"}); return
+                    today = datetime.now(LOCAL_TZ).date()
+                    if not (today - timedelta(days=365) <= d <= today):
+                        self.send_json({"ok": False, "error": "Datoen må være i løpet av det siste året"}); return
+                    if d.isoformat() != f["last_cleaned"]:
+                        last = d.isoformat()
+                        cache["filter_push_day"] = None
+                        add_event("setting", f"Filtre sist rengjort satt til {d:%d.%m.%Y}")
+                cache["filter"] = {"interval_days": days, "last_cleaned": last}
             if "stove" in body and isinstance(body["stove"], dict):
                 st = {**get_stove(), **body["stove"]}
                 off = max(20, min(45, round(float(st["off_above"]))))
