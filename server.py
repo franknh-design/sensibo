@@ -46,7 +46,7 @@ ROOM_ID = os.getenv("ROOM_ID") or next((r["id"] for r in ROOMS if not r.get("por
 # Hvor utetemperaturen hentes, per stue (Sensibo-enhet). Låst i koden så en kopiert .env
 # aldri kan gi Vigdis Franks Hue-sensor eller Finnsnes-været.
 OUTDOOR_BY_DEVICE = {
-    "YRqRonRH": {"place": "Finnsnes", "lat": 69.2333, "lon": 17.9833, "ha_sensor": True},     # Frank stue
+    "YRqRonRH": {"place": "Vårheim, Finnsnes", "lat": 69.2430, "lon": 18.1244, "ha_sensor": True},  # Frank stue (Vårheim 12)
     "MTBb7tSM": {"place": "Tromsdalen", "lat": 69.6436, "lon": 18.9950, "ha_sensor": False},  # Vigdis stue
 }
 _outdoor = OUTDOOR_BY_DEVICE.get(SENSIBO_DEVICE_UID) or {
