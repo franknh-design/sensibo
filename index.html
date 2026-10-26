@@ -494,11 +494,12 @@ input[type=time]{color-scheme:dark}
       <div class="graf-legend">
         <span><i style="background:var(--accent)"></i>Rom</span>
         <span><i style="background:var(--muted);height:0;border-top:2px dashed var(--muted)"></i>Ønsket</span>
+        <span><i style="background:#ffd166"></i>Ute</span>
         <span><i style="background:var(--warm)"></i>Innstilt</span>
         <span><i style="background:var(--accent3)"></i>Vifte</span>
       </div>
       <div id="grafBox" style="position:relative;touch-action:pan-y">
-        <svg id="grafSvg" width="100%" height="380" style="display:block"></svg>
+        <svg id="grafSvg" width="100%" height="470" style="display:block"></svg>
         <div id="grafTip" class="graf-tip" style="display:none"></div>
       </div>
       <div id="grafEmpty" style="display:none;font-size:11px;color:var(--muted);padding:20px;text-align:center">Ingen data i perioden ennå</div>
@@ -1625,7 +1626,8 @@ function drawGraf() {
   svg.style.display = empty.style.display === "none" ? "block" : "none";
   if (!pts.length) return;
   const W = svg.clientWidth || 600, padL = 34, padR = 8;
-  const P = [{y0: 6, h: 170}, {y0: 200, h: 100}, {y0: 322, h: 46}];   // rom/ønsket · innstilt · vifte
+  const P = [{y0: 6, h: 170}, {y0: 200, h: 70}, {y0: 292, h: 100}, {y0: 414, h: 46}];   // rom/ønsket · ute · innstilt · vifte
+  const UTE = P[1]; P.splice(1, 1);  // P[1] = innstilt, P[2] = vifte (som før); ute tegnes i UTE
   const x = t => padL + (t - d.start) / (d.end - d.start) * (W - padL - padR);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const acc = css("--accent"), muted = css("--muted"), warm = css("--warm"), blue = css("--accent3"), grid = "rgba(255,255,255,0.06)";
@@ -1636,6 +1638,10 @@ function drawGraf() {
   const yR = v => P[0].y0 + P[0].h - (v - lo) / (hi - lo) * P[0].h;
   const yS = v => P[1].y0 + P[1].h - (Math.max(16, Math.min(30, v)) - 16) / 14 * P[1].h;
   const yF = f => P[2].y0 + P[2].h - (FAN_Y[f] ?? 0) / 6 * P[2].h;
+  const uv = pts.map(p => p.u).filter(v => v != null);
+  let ulo = uv.length ? Math.floor(Math.min(...uv)) - 1 : -5, uhi = uv.length ? Math.ceil(Math.max(...uv)) + 1 : 10;
+  if (uhi - ulo < 4) { const mid = (uhi + ulo) / 2; ulo = Math.floor(mid - 2); uhi = Math.ceil(mid + 2); }
+  const yU = v => UTE.y0 + UTE.h - (v - ulo) / (uhi - ulo) * UTE.h;
   const line = (sel, step) => { let dd = "", prev = null;
     pts.forEach(p => { const v = sel(p); if (v == null) { prev = null; return; }
       const X = x(p.t).toFixed(1);
@@ -1648,21 +1654,27 @@ function drawGraf() {
   const tick = (y, txt) => `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="${grid}"/><text x="${padL - 4}" y="${y + 3}" fill="${muted}" font-size="9" text-anchor="end">${txt}</text>`;
   for (let v = Math.ceil(lo); v <= hi; v += (hi - lo > 6 ? 2 : 1)) g += tick(yR(v), v + "°");
   for (const v of [16, 20, 24, 28]) g += tick(yS(v), v + "°");
+  const ustep = Math.max(1, Math.ceil((uhi - ulo) / 4));
+  for (let v = Math.ceil(ulo / ustep) * ustep; v <= uhi; v += ustep) g += tick(yU(v), String(v).replace("-", "−") + "°");
+  if (ulo < 0 && uhi > 0) g += `<line x1="${padL}" x2="${W - padR}" y1="${yU(0)}" y2="${yU(0)}" stroke="rgba(79,195,247,0.25)" stroke-dasharray="2 3"/>`;
   g += tick(yF("auto"), "auto") + tick(yF("medium"), "mid") + tick(yF("high"), "høy");
   // tidsetiketter
   const span = d.end - d.start, n = W < 520 ? 4 : 6;  // smal skjerm: færre etiketter
   for (let i = 0; i <= n; i++) {
     const t = d.start + span * i / n, dt = new Date(t * 1000);
-    const lab = span > 2 * 86400 ? dt.toLocaleDateString("no-NO", {weekday: span > 8 * 86400 ? undefined : "short", day: "numeric", month: span > 8 * 86400 ? "numeric" : undefined})
-                                 : dt.toLocaleTimeString("no-NO", {hour: "2-digit", minute: "2-digit"});
+    const lab = span > 8 * 86400 ? `${dt.getDate()}.${dt.getMonth() + 1}`
+              : span > 2 * 86400 ? `${["sø","ma","ti","on","to","fr","lø"][dt.getDay()]} ${dt.getDate()}`
+              : dt.toLocaleTimeString("no-NO", {hour: "2-digit", minute: "2-digit"});
     g += `<line x1="${x(t)}" x2="${x(t)}" y1="${P[0].y0}" y2="${P[2].y0 + P[2].h}" stroke="${grid}"/>`;
     g += `<text x="${x(t)}" y="${P[2].y0 + P[2].h + 11}" fill="${muted}" font-size="9" text-anchor="${i === 0 ? "start" : i === n ? "end" : "middle"}">${lab}</text>`;
   }
+  g += `<text x="${padL + 2}" y="${UTE.y0 - 4}" fill="${muted}" font-size="9">ute</text>`;
   g += `<text x="${padL + 2}" y="${P[1].y0 - 4}" fill="${muted}" font-size="9">innstilt på pumpa</text>`;
   g += `<text x="${padL + 2}" y="${P[2].y0 - 4}" fill="${muted}" font-size="9">vifte</text>`;
   // data
   g += `<path d="${line(p => p.m == null ? null : yR(p.m), true)}" fill="none" stroke="${muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
   g += `<path d="${line(p => p.r == null ? null : yR(p.r), false)}" fill="none" stroke="${acc}" stroke-width="2"/>`;
+  g += `<path d="${line(p => p.u == null ? null : yU(p.u), false)}" fill="none" stroke="#ffd166" stroke-width="1.6"/>`;
   g += `<path d="${line(p => p.s == null ? null : yS(p.s), true)}" fill="none" stroke="${warm}" stroke-width="1.8"/>`;
   g += `<path d="${line(p => p.f == null ? null : yF(p.f), true)}" fill="none" stroke="${blue}" stroke-width="1.8"/>`;
   g += `<line id="grafCursor" x1="0" x2="0" y1="${P[0].y0}" y2="${P[2].y0 + P[2].h}" stroke="${muted}" stroke-width="1" style="display:none"/>`;
