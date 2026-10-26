@@ -12,13 +12,13 @@
 <style>
 :root {
   --bg:#0a0f1e; --surface:#111827; --surface2:#1a2236;
-  --border:rgba(255,255,255,0.07); --accent:#00d4aa; --accent3:#4f8ef7;
+  --border:rgba(255,255,255,0.07); --accent:#00d4aa; --accent-rgb:0,212,170; --accent3:#4f8ef7;
   --text:#e8edf5; --muted:#5a6a80; --warm:#ff8c42; --cold:#4fc3f7;
   --danger:#ff4757; --mono:'DM Mono',monospace; --sans:'Syne',sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,170,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(var(--accent-rgb),0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--accent-rgb),0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
 .app{position:relative;z-index:1;max-width:430px;margin:0 auto;padding:0 0 100px}
 
 /* Header */
@@ -59,7 +59,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
 /* Auto toggle */
 .auto-toggle{margin:0 24px 20px;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s}
-.auto-toggle.on{background:rgba(0,212,170,0.08);border-color:rgba(0,212,170,0.35)}
+.auto-toggle.on{background:rgba(var(--accent-rgb),0.08);border-color:rgba(var(--accent-rgb),0.35)}
 .auto-toggle-title{font-family:var(--sans);font-size:13px;font-weight:700;color:var(--muted);transition:color 0.2s}
 .auto-toggle.on .auto-toggle-title{color:var(--accent)}
 .auto-toggle-sub{font-size:10px;color:var(--muted);margin-top:3px}
@@ -87,7 +87,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .temp-picker .val{flex:1;text-align:center;font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent)}
 
 /* Info box */
-.info-box{background:rgba(0,212,170,0.04);border:1px solid rgba(0,212,170,0.12);border-radius:10px;padding:14px}
+.info-box{background:rgba(var(--accent-rgb),0.04);border:1px solid rgba(var(--accent-rgb),0.12);border-radius:10px;padding:14px}
 .info-box-title{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
 .info-box-content{font-size:11px;color:var(--muted);line-height:1.8}
 
@@ -97,7 +97,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .schedule-item-left{}
 .schedule-item-top{display:flex;align-items:center;gap:8px}
 .schedule-time{color:var(--accent);font-weight:500;font-size:13px}
-.schedule-temp{background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.2);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px}
+.schedule-temp{background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.2);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px}
 .schedule-days{font-size:10px;color:var(--muted);margin-top:3px}
 .del-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px;transition:color 0.2s}
 .del-btn:hover{color:var(--danger)}
@@ -112,27 +112,27 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* Day selector */
 .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .day-btn{padding:6px 2px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:9px;cursor:pointer;text-align:center;transition:all 0.15s}
-.day-btn.active{background:rgba(0,212,170,0.12);border-color:var(--accent);color:var(--accent)}
+.day-btn.active{background:rgba(var(--accent-rgb),0.12);border-color:var(--accent);color:var(--accent)}
 
 /* Slider */
 .slider-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .slider-val{font-family:var(--sans);font-size:20px;font-weight:700;color:var(--accent)}
 input[type=range]{-webkit-appearance:none;width:100%;height:4px;background:var(--surface2);border-radius:2px;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 12px rgba(0,212,170,0.4)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 12px rgba(var(--accent-rgb),0.4)}
 .slider-minmax{display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--muted)}
 
 /* Fan grid */
 .fan-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .fan-btn{padding:10px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:0.05em;text-transform:uppercase;cursor:pointer;text-align:center;transition:all 0.15s}
-.fan-btn.active{background:rgba(0,212,170,0.12);border-color:var(--accent);color:var(--accent)}
+.fan-btn.active{background:rgba(var(--accent-rgb),0.12);border-color:var(--accent);color:var(--accent)}
 
 /* Heat lock */
-.heat-lock{display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid rgba(0,212,170,0.25);border-radius:10px;padding:12px 16px}
+.heat-lock{display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid rgba(var(--accent-rgb),0.25);border-radius:10px;padding:12px 16px}
 
 /* Boost */
 .boost-box{background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:14px}
 .boost-box-title{font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--warm);margin-bottom:8px}
-.boost-active-box{background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);border-radius:10px;padding:14px;display:none}
+.boost-active-box{background:rgba(var(--accent-rgb),0.06);border:1px solid rgba(var(--accent-rgb),0.2);border-radius:10px;padding:14px;display:none}
 .boost-active-box.show{display:block}
 
 /* Action row */
@@ -165,14 +165,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .log-warn{color:var(--warm)}
 .rule-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .rule-btn{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
-.rule-btn.on{color:var(--accent);border-color:rgba(0,212,170,0.35)}
+.rule-btn.on{color:var(--accent);border-color:rgba(var(--accent-rgb),0.35)}
 .night-times{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .night-times input{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:13px;color:var(--accent);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 8px;color-scheme:dark}
 .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .log-head .log-title{margin-bottom:0}
 .log-filter{display:flex;gap:4px}
 .log-filter button{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer}
-.log-filter button.on{color:var(--accent);border-color:rgba(0,212,170,0.35)}
+.log-filter button.on{color:var(--accent);border-color:rgba(var(--accent-rgb),0.35)}
 .log-k-fan{color:var(--warm)}
 .log-list{max-height:420px;overflow-y:auto;gap:4px;scrollbar-width:thin;scrollbar-color:var(--surface2) transparent;padding-right:2px}
 .log-list::-webkit-scrollbar{width:6px} .log-list::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:3px}
@@ -187,7 +187,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 /* Toast */
 .toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--text);z-index:100;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
-.toast.ok{border-color:rgba(0,212,170,0.3);color:var(--accent)}
+.toast.ok{border-color:rgba(var(--accent-rgb),0.3);color:var(--accent)}
 .toast.err{border-color:rgba(255,71,87,0.3);color:var(--danger)}
 
 /* Bottom nav */
@@ -702,7 +702,7 @@ input[type=time]{color-scheme:dark}
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Kjøling</div>
-      <div style="padding:18px;display:flex;align-items:center;gap:12px;background:rgba(0,212,170,0.04);border-radius:10px;margin:0">
+      <div style="padding:18px;display:flex;align-items:center;gap:12px;background:rgba(var(--accent-rgb),0.04);border-radius:10px;margin:0">
         <span style="font-size:24px">🔒</span>
         <div>
           <div style="color:var(--accent);font-size:12px;font-weight:500">Kjøling permanent deaktivert</div>
@@ -740,6 +740,17 @@ try { ROOM = sessionStorage.getItem("varmeRoom"); } catch(e) {}
 let API = window.location.origin;
 let ROOM_ID = null;  // stua appen viser — sendes med hver endring, serveren avviser feil stue
 
+// Egen farge per stue, så det er lett å se hvilken stue man står i
+const ROOM_COLORS = {vigdis: ["#b48cff", "180,140,255"]};   // alle andre: turkis (standard)
+function applyRoomColor(id) {
+  const [hex, rgb] = ROOM_COLORS[id] || ["#00d4aa", "0,212,170"];
+  const root = document.documentElement.style;
+  root.setProperty("--accent", hex); root.setProperty("--accent-rgb", rgb);
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = hex;
+}
+const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#00d4aa";
+const accentRgba = a => `rgba(${getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").trim() || "0,212,170"},${a})`;
+
 const _fetch = window.fetch.bind(window);
 window.fetch = (url, opts = {}) => {
   if (ROOM_ID && typeof url === "string" && url.startsWith(API) && (opts.method || "GET").toUpperCase() === "POST")
@@ -763,6 +774,7 @@ async function loadRooms() {
     const rooms = d.rooms || [];
     let cur = rooms.find(r => r.id === ROOM) || rooms.find(r => r.id === d.default) || rooms.find(r => r.local) || rooms[0];
     ROOM_ID = cur.id;
+    applyRoomColor(cur.id);
     if (cur && !cur.local) API = `${window.location.origin}/r/${cur.id}`;
     if (rooms.length > 1) {
       const el = document.getElementById("roomSwitch");
@@ -1098,7 +1110,7 @@ function renderHoldLearn() {
     const hold = e.v != null ? `${sgn(Math.round(e.v))}° · ${FAN_NO_UI[e.fan] || e.fan || "?"} vifte` : "—";
     const floor = e.floor != null ? ` <span style="color:var(--muted)">(minst ${sgn(e.floor)}°)</span>` : "";
     const n = e.n ? `<span style="color:var(--muted)">${e.n} t</span>` : "";
-    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:8px;background:${b === near ? "rgba(0,212,170,0.08)" : "var(--surface2)"}">
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:8px;background:${b === near ? "rgba(var(--accent-rgb),0.08)" : "var(--surface2)"}">
       <span style="color:var(--accent);min-width:56px">${deg(b)}° ute</span><span style="flex:1">${hold}${floor}</span>${n}</div>`;
   }).join("");
 }
@@ -1454,11 +1466,11 @@ function drawChart(vals) {
     const x=pad+i*step, y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);
     i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
   });
-  ctx.strokeStyle="rgba(0,212,170,0.8)"; ctx.lineWidth=2; ctx.stroke();
+  ctx.strokeStyle=accentRgba(0.8); ctx.lineWidth=2; ctx.stroke();
   vals.forEach((v,i)=>{
     const x=pad+i*step, y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);
     ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
-    ctx.fillStyle="#00d4aa"; ctx.fill();
+    ctx.fillStyle=accentColor(); ctx.fill();
   });
 }
 
@@ -1587,7 +1599,7 @@ function renderTimeplanPage() {
       <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <span style="font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent)">${s.time}</span>
-          <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.2);border-radius:8px;padding:3px 10px;color:var(--accent);font-size:13px">${s.temp.toFixed(1)}°C</span>
+          <span style="background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.2);border-radius:8px;padding:3px 10px;color:var(--accent);font-size:13px">${s.temp.toFixed(1)}°C</span>
         </div>
         <div style="font-size:11px;color:var(--muted)">${dayStr(s.days||[0,1,2,3,4,5,6])}</div>
       </div>
@@ -1684,14 +1696,14 @@ function renderLearnPage() {
     // Line
     ctx.beginPath();
     vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-    ctx.strokeStyle="rgba(0,212,170,0.8)"; ctx.lineWidth=2; ctx.stroke();
+    ctx.strokeStyle=accentRgba(0.8); ctx.lineWidth=2; ctx.stroke();
     // Fill
     ctx.beginPath();
     vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
     ctx.lineTo(pad+((vals.length-1)*step),H-pad); ctx.lineTo(pad,H-pad);
-    ctx.fillStyle="rgba(0,212,170,0.06)"; ctx.fill();
+    ctx.fillStyle=accentRgba(0.06); ctx.fill();
     // Dots
-    vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle="#00d4aa";ctx.fill();});
+    vals.forEach((v,i)=>{const x=pad+i*step,y=H-pad-(H-2*pad)*(v-min)/Math.max(max-min,0.1);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle=accentColor();ctx.fill();});
   }
 
   // Sesjonslogg
