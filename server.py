@@ -507,7 +507,9 @@ def get_staged():
     return st
 
 def _is_heating(ac):
-    return ac.get("on") and ac.get("targetTemperature") == 30 and ac.get("fanLevel") == "high"
+    """Full trøkk (nødoppvarming) pågår — ikke et lært/holdt 30°/høy."""
+    return bool(ac.get("on") and ac.get("targetTemperature") == 30 and ac.get("fanLevel") == "high"
+                and cache.get("full_heat", True))
 
 # ── Vedovn-stopp: sensoren henger på pipa over vedovnen ──
 STOVE_DEFAULT = {"enabled": True, "off_above": 26}
@@ -604,6 +606,7 @@ def auto_feedback_check():
         payload = {"on": True, "mode": "heat", "targetTemperature": 30, "fanLevel": "high"}
         if sensibo_patch(uid, payload, f"Auto oppvarming (rom {current:.1f}°C, mål {target:g}°C)"):
             cache["ac"].update(payload)
+            cache["full_heat"] = True
             cache["auto_heat_start"] = {"temp": current, "time": time.time(), "outdoor": cache.get("outdoor_temp")}
             log.info(f"Auto OPPVARMING: {current:.1f}°C < {target - hysteresis:.1f}°C | 30°C + høy vifte")
         return
@@ -612,7 +615,24 @@ def auto_feedback_check():
     # HOLDE — juster påslaget sakte etter hvordan rommet faktisk ligger
     offset = cache.get("hold_offset", 1)
     now = time.time()
-    if not heating and now - cache.get("hold_adjusted_at", 0) >= HOLD_ADJUST_EVERY:
+    def _hold_fan(off):
+        if staged["enabled"] and cache.get("hold_fan"):
+            return cache["hold_fan"]
+        return staged["fan"] if (staged["enabled"] and off > STAGED_FAN_ABOVE) else normal_fan
+    if staged["enabled"] and not heating:
+        learned = hold_learning(current, target, offset, heating, _hold_fan(offset))
+        if learned is not None:
+            offset, lfan = learned
+            cache["hold_offset"] = offset
+            cache["hold_fan"] = lfan if lfan else None
+            cache["hold_adjusted_at"] = now
+            save_state()
+    # Trinnvis modus: huset avgir restvarme etter oppvarming — trapp ned roligere (1 t mellom hvert hakk)
+    adjust_every = HOLD_ADJUST_EVERY * (2 if staged["enabled"] else 1)
+    too_warm = staged["enabled"] and current > target + 1.0
+    if too_warm:
+        adjust_every = HOLD_ADJUST_EVERY  # tydelig for varmt (væromslag o.l.): raskere ned
+    if not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
         new = offset
         if current < target - HOLD_LOW and not staged["enabled"]:
             new = min(HOLD_OFFSET_MAX, offset + 1)
@@ -621,22 +641,125 @@ def auto_feedback_check():
             if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
                 floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
                 cache["hold_floor"] = floor
-            new = max(HOLD_OFFSET_MIN, floor, offset - 1)
+            new = max(HOLD_OFFSET_MIN, floor, offset - (2 if too_warm else 1))
+            if staged["enabled"] and cache.get("hold_fan") == "high":
+                # For varmt med høy vifte: senk viften først (stillere), temperaturen etterpå
+                cache["hold_fan"] = staged["fan"]
+                cache["hold_adjusted_at"] = now
+                new = offset
         if new != offset:
             cache["hold_offset"] = offset = new
             cache["hold_adjusted_at"] = now
             save_state()
     wanted_temp = min(30, int(round(target + offset)))
-    hold_fan = normal_fan
-    if staged["enabled"] and offset > STAGED_FAN_ABOVE:
-        hold_fan = staged["fan"]  # høyt hold etter trinn: fast rolig vifte, ikke auto (som skrur seg opp)
+    if staged["enabled"] and cache.get("hold_fan") and cache["hold_fan"] != "high" and offset <= STAGED_FAN_ABOVE:
+        cache["hold_fan"] = None  # nede på lavt hold igjen: normalvifte
+    hold_fan = _hold_fan(offset)
     if ac.get("on") and ac.get("targetTemperature") == wanted_temp and ac.get("fanLevel") == hold_fan:
         return
     payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": hold_fan}
     if sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C, mål {target:g}°C)"):
         cache["ac"].update(payload)
+        cache["full_heat"] = False
         cache["hold_adjusted_at"] = now
         log.info(f"Auto HOLDER: rom {current:.1f}°C, mål {target}°C | pumpe {wanted_temp}°C (påslag {offset:+d})")
+
+# ── Lært hold per utetemperatur: hva pumpa må stå på for å holde ønsket temp ──
+HL_BUCKET = 2             # utetemp grupperes i trinn på 2 °C
+HL_STABLE_SECONDS = 3600  # én time stabilt rundt ønsket = én måling
+HL_STABLE_BAND = 0.3
+HL_STABLE_DRIFT = 0.2     # rommet må ligge flatt (±0,2) gjennom timen — ikke kjøle seg ned fra overskudd
+HL_APPLY_EVERY = 3600     # bytt til lært innstilling høyst én gang i timen (hver kommando piper)
+HL_MAX_REACH = 3          # uten måling på begge sider: bruk bare lært verdi innen 3 °C fra der den er målt
+
+def hl_bucket(out):
+    return int(round(out / HL_BUCKET) * HL_BUCKET)
+
+def hl_record(out, offset, kind, fan=None):
+    """kind «stable»: denne kombinasjonen (temp + vifte) holdt. «fail»: den holdt ikke — trenger minst ett hakk mer."""
+    if out is None:
+        return
+    hl = cache.setdefault("hold_learn", {})
+    b = str(hl_bucket(out))
+    e = hl.get(b)
+    e = dict(e or {})
+    if kind == "stable":
+        e["v"] = round(offset if e.get("v") is None else 0.7 * e["v"] + 0.3 * offset, 2)
+        if fan:
+            e["fan"] = fan
+        e["n"] = e.get("n", 0) + 1
+        if e.get("floor") is not None and e["floor"] > e["v"] + 0.5:
+            e["floor"] = int(round(e["v"]))  # holdt stabilt lavere enn gulvet: gulvet var for strengt
+    else:
+        e["floor"] = max(e.get("floor", -99), offset + 1)  # bare et gulv: «trenger minst dette»
+    e["at"] = datetime.now(LOCAL_TZ).isoformat(timespec="minutes")
+    hl[b] = e
+    save_state()
+
+def hl_predict(out):
+    """Lært påslag ved denne utetemp (lineært mellom nærmeste trinn med data). None uten data."""
+    hl = cache.get("hold_learn") or {}
+    if out is None or not hl:
+        return None
+    pts = sorted((int(k), e["v"], e.get("fan")) for k, e in hl.items() if e.get("v") is not None)
+    if not pts:
+        return None
+    below = [p for p in pts if p[0] <= out]
+    above = [p for p in pts if p[0] >= out]
+    nearest = min(pts, key=lambda p: abs(p[0] - out))  # viften følger nærmeste måling
+    if below and above:
+        (x0, y0, _), (x1, y1, _) = below[-1], above[0]
+        v = y0 if x1 == x0 else y0 + (y1 - y0) * (out - x0) / (x1 - x0)
+    else:
+        edge = below[-1] if below else above[0]
+        if abs(edge[0] - out) > HL_MAX_REACH:
+            return None  # for langt unna det vi har lært — ikke gjett
+        v = edge[1]
+    floor = (hl.get(str(hl_bucket(out))) or {}).get("floor")
+    if floor is not None:
+        v = max(v, floor)
+    return v, nearest[2]
+
+def hold_learning(current, target, offset, heating, fan):
+    """Kalles i holdet (trinnvis modus). Måler hva som holder (temp + vifte), og hopper rett dit
+    når været skifter. Returnerer evt. (nytt påslag, vifte)."""
+    now, out = time.time(), cache.get("outdoor_temp")
+    # 1) Måling: en time stabilt rundt ønsket på samme innstilling
+    if abs(current - target) <= HL_STABLE_BAND:
+        cache["hl_in_band_at"], cache["hl_in_band_target"] = now, target
+    if not heating and abs(current - target) <= HL_STABLE_BAND:
+        if cache.get("hl_stable_offset") != (offset, fan) or not cache.get("hl_stable_since"):
+            cache["hl_stable_since"], cache["hl_stable_offset"] = now, (offset, fan)
+            cache["hl_stable_room"] = current
+        elif now - cache["hl_stable_since"] >= HL_STABLE_SECONDS:
+            if abs(current - cache.get("hl_stable_room", current)) <= HL_STABLE_DRIFT:
+                hl_record(out, offset, "stable", fan)
+            cache["hl_stable_since"], cache["hl_stable_room"] = now, current
+    else:
+        cache["hl_stable_since"] = None
+    # 2) Bruk: gå til lært innstilling når den skiller seg tydelig fra dagens
+    res = hl_predict(out)
+    if res is None or now - cache.get("hl_applied_at", 0) < HL_APPLY_EVERY:
+        return None
+    pred, lfan = res
+    want = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(pred))))
+    fan_change = bool(lfan) and lfan != fan and (lfan == "high" or fan == "high")
+    if (want == offset or abs(pred - offset) < 0.75) and not fan_change:
+        return None
+    # Ta hensyn til innetemp nå: ikke skru opp i et varmt rom, ikke ned i et kaldt
+    if want > offset and current > target + HL_STABLE_BAND:
+        return None
+    if want < offset and current < target - HL_STABLE_BAND:
+        return None
+    cache["hl_applied_at"] = now
+    cache["hold_floor"] = want  # ikke trapp ned forbi det som har holdt ved denne utetemp
+    add_event("auto", f"Lært: ved {out:.0f}°C ute holder pumpa ønsket temp på ca. {target + want:g}°C"
+                      f"{' · ' + FAN_NO.get(lfan, lfan) + ' vifte' if lfan else ''} — justerer fra {target + offset:g}°C")
+    return want, lfan
+
+def _step_fan(ac, st):
+    """Trinn bruker fast rolig vifte — men går aldri NED fra høy (lært: høy kan være riktig ved kulde)."""
+    return "high" if ac.get("fanLevel") == "high" else st["fan"]
 
 def staged_check(uid, current, target, st, ac, normal_fan):
     """Trinnvis oppvarming. True = trinnene styrer pumpa nå (resten av auto hopper over)."""
@@ -652,12 +775,15 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             cache.pop("esc", None)
             set_t = ac.get("targetTemperature") or target
             cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(set_t - target))))
+            cache["hold_fan"] = ac.get("fanLevel")  # behold viften som virket (også høy, f.eks. ved −10)
+            cache["full_heat"] = False
+            cache["hl_applied_at"] = now  # ferskt bevis — ikke overstyr med lært verdi den neste timen
             cache["hold_adjusted_at"] = now
             save_state()
             log_auto_heat_session(current)
             add_event("auto", f"Trinnvis oppvarming ferdig: rommet {current:.1f}°C etter "
                               f"{(now - esc['start']) / 60:.0f} min (nådde {set_t}°C · {FAN_NO.get(ac.get('fanLevel'), ac.get('fanLevel'))} vifte)")
-            return False  # holdet tar over (samme temp; høy vifte trappes ned til trinn-viften)
+            return False  # holdet tar over med samme temp og vifte
         if now - esc["last_step"] < st["every_min"] * 60 or current >= esc["room_at_step"] + STAGED_RISING:
             if current >= esc["room_at_step"] + STAGED_RISING:
                 # Det virker: nullstill klokka og referansen, ikke trapp opp
@@ -665,7 +791,7 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             return True
         set_t = ac.get("targetTemperature") or target
         if set_t < 30:
-            new_t, fan, why = min(30, set_t + st["step"]), st["fan"], f"+{st['step']}°"
+            new_t, fan, why = min(30, set_t + st["step"]), _step_fan(ac, st), f"+{st['step']}°"
         elif ac.get("fanLevel") != "high":
             new_t, fan, why = 30, "high", "høy vifte (siste trinn)"
         else:
@@ -674,9 +800,20 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         if current >= target - STAGED_START_BELOW:
             return False
         set_t = ac.get("targetTemperature") or int(round(target))
-        new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), st["fan"], f"+{st['step']}°"
+        new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), _step_fan(ac, st), f"+{st['step']}°"
+        # Kjent vær: start rett på kombinasjonen som har holdt før (f.eks. 27° + høy ved −10)
+        res = hl_predict(cache.get("outdoor_temp"))
+        if res is not None:
+            l_t = min(30, int(round(target + res[0])))
+            if l_t > new_t or (res[1] == "high" and fan != "high" and l_t >= new_t):
+                new_t, why = max(new_t, l_t), f"lært for {cache.get('outdoor_temp'):.0f}°C ute"
+                if res[1] == "high":
+                    fan = "high"
         # Holdet vi hadde var ikke nok — neste gang trappes det ikke ned forbi ett hakk over dette
         if ac.get("on") and set_t < 30:
+            # Svikt bare hvis rommet lå rundt SAMME ønsket temp nylig (ikke morgenhopp natt→dag)
+            if cache.get("hl_in_band_target") == target and now - cache.get("hl_in_band_at", 0) < HL_STABLE_SECONDS:
+                hl_record(cache.get("outdoor_temp"), int(set_t - target), "fail")
             floor = int(set_t - target) + 1
             if floor > cache.get("hold_floor", HOLD_OFFSET_MIN):
                 cache["hold_floor"] = floor
@@ -687,7 +824,9 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     payload = {"on": True, "mode": "heat", "targetTemperature": int(new_t), "fanLevel": fan}
     if sensibo_patch(uid, payload, f"Trinnvis oppvarming {why} (rom {current:.1f}°C, mål {target:g}°C)"):
         cache["ac"].update(payload)
+        cache["full_heat"] = False
     esc.update(last_step=now, room_at_step=current)
+    save_state()  # trinnene overlever omstart
     return True
 
 # ============================================================
@@ -1037,7 +1176,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1259,6 +1398,9 @@ class Handler(BaseHTTPRequestHandler):
                 "stove": get_stove(),
                 "staged": get_staged(),
                 "staged_active": bool(cache.get("esc")),
+                "hold_learn": cache.get("hold_learn") or {},
+                "hold_learn_now": (lambda p: None if p is None else {"offset": round(p[0], 1), "fan": p[1]})(hl_predict(cache.get("outdoor_temp"))),
+                "hold_fan": cache.get("hold_fan"),
                 "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),

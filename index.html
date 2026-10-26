@@ -454,6 +454,11 @@ input[type=time]{color-scheme:dark}
     <div style="font-size:11px;color:var(--muted)" id="learnBadge2">0 sesjoner</div>
   </div>
   <div class="card-grid" style="padding:0 24px;display:grid;gap:12px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px">
+      <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Lært: hva som holder ønsket temp</div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.6;margin-bottom:10px">Per utetemperatur: innstillingen (temp over ønsket + vifte) som har holdt rommet stabilt en hel time. «Minst» = holdt ikke på lavere.</div>
+      <div id="holdLearnList" style="display:grid;gap:6px;font-size:11px"></div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
       <div class="info-card"><div class="info-card-label">Snitt tid</div><div class="info-card-value" id="ls-avg">—</div><div class="info-card-sub">min</div></div>
       <div class="info-card"><div class="info-card-label">Beste</div><div class="info-card-value" id="ls-best">—</div><div class="info-card-sub">min/°C</div></div>
@@ -949,6 +954,7 @@ function applyStatus(d) {
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.hold_learn) { S.holdLearn = d.hold_learn; S.holdLearnNow = d.hold_learn_now; S.outdoorNow = d.outdoor_temp; renderHoldLearn(); }
     if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
     if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
     if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; S.nightColdSkip = d.night_cold_skip; renderNight(); }
@@ -1070,6 +1076,25 @@ function openNightSettings() {
 }
 
 const FAN_NO_UI = {quiet:"stille", low:"lav", medium:"middels", medium_high:"middels-høy", high:"høy", auto:"auto"};
+function renderHoldLearn() {
+  const el = document.getElementById("holdLearnList"); if (!el) return;
+  const rows = Object.entries(S.holdLearn || {}).map(([k, e]) => [Number(k), e]).sort((a, b) => a[0] - b[0]);
+  const sgn = v => (v >= 0 ? "+" : "−") + Math.abs(v);
+  const deg = v => String(v).replace("-", "−");
+  if (!rows.length) {
+    el.innerHTML = '<div style="color:var(--muted)">Ingen målinger ennå — fylles på etter hvert som pumpa holder temperaturen stabilt (trinnvis oppvarming må være på).</div>';
+    return;
+  }
+  const near = S.outdoorNow != null ? Math.round(S.outdoorNow / 2) * 2 : null;
+  el.innerHTML = rows.map(([b, e]) => {
+    const hold = e.v != null ? `${sgn(Math.round(e.v))}° · ${FAN_NO_UI[e.fan] || e.fan || "?"} vifte` : "—";
+    const floor = e.floor != null ? ` <span style="color:var(--muted)">(minst ${sgn(e.floor)}°)</span>` : "";
+    const n = e.n ? `<span style="color:var(--muted)">${e.n} t</span>` : "";
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:8px;background:${b === near ? "rgba(0,212,170,0.08)" : "var(--surface2)"}">
+      <span style="color:var(--accent);min-width:56px">${deg(b)}° ute</span><span style="flex:1">${hold}${floor}</span>${n}</div>`;
+  }).join("");
+}
+
 function renderStaged() {
   const st = S.staged; if (!st) return;
   const b = document.getElementById("stagedBtn");
