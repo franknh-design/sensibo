@@ -960,6 +960,7 @@ function applyStatus(d) {
     const acTemp = d.ac.targetTemperature;
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
+    S.acFan = d.ac.fanLevel; S.acTemp = d.ac.targetTemperature;
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
     if (d.hold_learn) { S.holdLearn = d.hold_learn; S.holdLearnNow = d.hold_learn_now; S.outdoorNow = d.outdoor_temp; renderHoldLearn(); }
     if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
@@ -1231,7 +1232,9 @@ function updateAutoToggleUI() {
     sub.textContent = `Endret utenfor appen · fortsetter senest ${til}`;
   } else if (S.autoEnabled) {
     title.textContent = S.autoPhase==="varmer"?"⚡ Varmer opp":"✓ Holder temperatur";
-    sub.textContent = S.autoPhase==="varmer"?`30°C · høy vifte`:`mål ${S.targetTemp}°C · mid-høy vifte`;
+    const fanTxt = (FAN_LABELS[S.acFan] || S.acFan || "—").toLowerCase();
+    sub.textContent = S.autoPhase==="varmer" ? `30°C · høy vifte`
+      : (S.stagedActive ? `trinnvis oppvarming · pumpe ${S.acTemp}°C · ${fanTxt} vifte` : `mål ${S.targetTemp}°C · pumpe ${S.acTemp}°C · ${fanTxt} vifte`);
   } else {
     title.textContent = "Auto-styring";
     sub.textContent = "Trykk for å aktivere";

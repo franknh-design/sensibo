@@ -679,10 +679,10 @@ def auto_feedback_check():
         if current < target - HOLD_LOW and not staged["enabled"]:
             new = min(HOLD_OFFSET_MAX, offset + 1)
         elif current > target + HOLD_HIGH or rising_fast:
-            floor = cache.get("hold_floor", HOLD_OFFSET_MIN) if staged["enabled"] else HOLD_OFFSET_MIN
+            floor = current_floor() if staged["enabled"] else HOLD_OFFSET_MIN
             if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
                 floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
-                cache["hold_floor"] = floor
+                cache["hold_floor"], cache["hold_floor_at"] = floor, now
             new = max(HOLD_OFFSET_MIN, floor, offset - (2 if too_warm else 1))
             if staged["enabled"] and cache.get("hold_fan") == "high":
                 # For varmt med høy vifte: senk viften først (stillere), temperaturen etterpå
@@ -794,10 +794,17 @@ def hold_learning(current, target, offset, heating, fan):
     if want < offset and current < target - HL_STABLE_BAND:
         return None
     cache["hl_applied_at"] = now
-    cache["hold_floor"] = want  # ikke trapp ned forbi det som har holdt ved denne utetemp
+    cache["hold_floor"], cache["hold_floor_at"] = want, now  # ikke trapp ned forbi det som har holdt ved denne utetemp
     add_event("auto", f"Lært: ved {out:.0f}°C ute holder pumpa ønsket temp på ca. {target + want:g}°C"
                       f"{' · ' + FAN_NO.get(lfan, lfan) + ' vifte' if lfan else ''} — justerer fra {target + offset:g}°C")
     return want, lfan
+
+HOLD_FLOOR_TTL = 6 * 3600   # et gulv gjelder i 6 t; det varige ligger i lært tabell per utetemp
+
+def current_floor():
+    if time.time() - cache.get("hold_floor_at", 0) > HOLD_FLOOR_TTL:
+        return HOLD_OFFSET_MIN
+    return cache.get("hold_floor", HOLD_OFFSET_MIN)
 
 def _step_fan(ac, st):
     """Trinn bruker fast rolig vifte — men går aldri NED fra høy (lært: høy kan være riktig ved kulde)."""
@@ -868,14 +875,15 @@ def staged_check(uid, current, target, st, ac, normal_fan):
                 new_t, why = max(new_t, l_t), f"lært for {cache.get('outdoor_temp'):.0f}°C ute"
                 if res[1] == "high":
                     fan = "high"
-        # Holdet vi hadde var ikke nok — neste gang trappes det ikke ned forbi ett hakk over dette
-        if ac.get("on") and set_t < 30:
-            # Svikt bare hvis rommet lå rundt SAMME ønsket temp nylig (ikke morgenhopp natt→dag)
-            if cache.get("hl_in_band_target") == target and now - cache.get("hl_in_band_at", 0) < HL_STABLE_SECONDS:
-                hl_record(cache.get("outdoor_temp"), int(set_t - target), "fail")
+        # Holdet vi hadde var ikke nok — neste gang trappes det ikke ned forbi ett hakk over dette.
+        # Bare ved ekte svikt: rommet lå rundt SAMME ønskede temp nylig (ikke morgenhopp, ikke trinn på vei opp)
+        real_fail = (ac.get("on") and set_t < 30 and cache.get("hl_in_band_target") == target
+                     and now - cache.get("hl_in_band_at", 0) < HL_STABLE_SECONDS)
+        if real_fail:
+            hl_record(cache.get("outdoor_temp"), int(set_t - target), "fail")
             floor = int(set_t - target) + 1
-            if floor > cache.get("hold_floor", HOLD_OFFSET_MIN):
-                cache["hold_floor"] = floor
+            if floor > current_floor():
+                cache["hold_floor"], cache["hold_floor_at"] = floor, now
         esc = {"start": now, "last_step": now, "room_at_step": current}
         cache["esc"] = esc
         cache["auto_heat_start"] = {"temp": current, "time": now, "outdoor": cache.get("outdoor_temp")}
@@ -1240,7 +1248,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
 ]
 
 def save_state():
