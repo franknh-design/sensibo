@@ -525,6 +525,7 @@ D_RISE = 1.2               # °C/t (≈0,3 på 15 min) = stiger fort
 D_FALL = -0.8              # °C/t = faller fort
 D_BRAKE_WITHIN = 0.5       # stiger det fort og rommet er innen 0,5 av målet: avslutt trinnene nå
 D_RISING = 0.3             # °C/t: rommet stiger allerede — ikke ta neste trinn
+D_RISE_FULL = 2.0          # full gass stiger naturlig fort — brems først over 2 °C/t
 
 def get_staged():
     st = {**STAGED_DEFAULT, **(cache.get("staged") or {})}
@@ -618,13 +619,24 @@ def auto_feedback_check():
         return
 
     staged = get_staged()
-    if staged["enabled"]:
+    morning = cache.get("morning_full")
+    if morning and current >= target - HEAT_STOP_BELOW:
+        cache.pop("morning_full", None)  # varm nok — morgenen er ferdig, vanlig styring
+        morning = False
+    if staged["enabled"] and not morning:
         if staged_check(uid, current, target, staged, ac, normal_fan):
             return
         hysteresis = staged["full_below"]  # full trøkk med en gang bare når rommet er langt under
+    if morning:
+        hysteresis = HEAT_STOP_BELOW      # etter natta: full gass helt til nesten varmt
 
     heating = _is_heating(ac)
-    if current < target - hysteresis or (heating and current < target - HEAT_STOP_BELOW):
+    rate = room_rate()
+    braking = heating and rate is not None and rate >= D_RISE_FULL and current >= target - D_BRAKE_WITHIN
+    if braking:
+        cache.pop("morning_full", None)
+        add_event("auto", f"Bremser full gass: rommet stiger {rate:.1f}°C/t ved {current:.1f}°C")
+    if (current < target - hysteresis or (heating and current < target - HEAT_STOP_BELOW)) and not braking:
         if heating:
             return
         # NB: påslaget økes ikke her — oppvarming skyldes ofte åpen dør, ikke for lavt hold.
@@ -844,6 +856,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         falling_fast = rate is not None and rate <= D_FALL and current < target - STAGED_DONE_BELOW
         if current >= target - STAGED_START_BELOW and not falling_fast:
             return False
+        if rate is not None and rate >= D_RISING:
+            return False  # rommet er allerede på vei opp (f.eks. etter full gass) — ikke start trinn
         set_t = ac.get("targetTemperature") or int(round(target))
         new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), _step_fan(ac, st), f"+{st['step']}°"
         # Kjent vær: start rett på kombinasjonen som har holdt før (f.eks. 27° + høy ved −10)
@@ -891,7 +905,8 @@ def get_outdoor_rule():
 # Nattsenking: eget mål om natta; om morgenen går målet tilbake til dagregelen (utetemp).
 # weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
 NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True,
-                 "cold_skip": False, "cold_skip_below": -5}  # ingen nattsenking når det er kaldere enn dette ute
+                 "cold_skip": False, "cold_skip_below": -5,   # ingen nattsenking når det er kaldere enn dette ute
+                 "morning_full": True}                         # full gass (30° + høy) fra natt til dag
 COLD_SKIP_BAND = 1.0  # nattsenking tilbake først når det er 1 °C over grensen (hindrer flipping)
 
 def get_night():
@@ -1027,6 +1042,10 @@ def outdoor_rule_check(force=False):
     if mode == prev and not force:
         return
     cache["target_mode"] = mode
+    if prev == "night" and mode != "night" and night.get("morning_full", True):
+        cache["morning_full"] = True   # varm opp etter natta på full gass (rask), så trinnvis
+    elif mode == "night":
+        cache.pop("morning_full", None)
 
     if mode == "night":
         if prev != "night":
@@ -1221,7 +1240,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1576,6 +1595,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "end": n["end"], "temp": max(16, min(28, round(float(n["temp"])))),
                                  "preheat": bool(n.get("preheat", True)),
                                  "cold_skip": bool(n.get("cold_skip", False)),
+                                 "morning_full": bool(n.get("morning_full", True)),
                                  "cold_skip_below": max(-30, min(10, round(float(n.get("cold_skip_below", -5)))))}
                 except (ValueError, AssertionError, TypeError):
                     self.send_json({"ok": False, "error": "Ugyldig klokkeslett"}); return

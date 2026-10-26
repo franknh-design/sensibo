@@ -570,6 +570,13 @@ input[type=time]{color-scheme:dark}
         </div>
         <div class="rule-row" style="margin-top:0">
           <div>
+            <div style="color:var(--text);font-size:12px">Full gass etter nattsenking</div>
+            <div style="font-size:10px;color:var(--muted)">30° + høy vifte til stua er varm igjen, så rolig styring</div>
+          </div>
+          <button class="rule-btn" id="morningFullBtn" onclick="saveNight({morning_full: !(S.night && S.night.morning_full !== false)})">PÅ</button>
+        </div>
+        <div class="rule-row" style="margin-top:0">
+          <div>
             <div style="color:var(--text);font-size:12px">Ingen nattsenking når det er kaldt ute</div>
             <div style="font-size:10px;color:var(--muted)">Holder dagtemperaturen hele natta når det er kaldere enn grensen</div>
           </div>
@@ -1171,6 +1178,8 @@ function renderNight() {
   const ph = n.preheat !== false;
   const pb = document.getElementById("preheatBtn");
   pb.textContent = ph ? "PÅ" : "AV"; pb.classList.toggle("on", ph);
+  const mf = n.morning_full !== false, mfb = document.getElementById("morningFullBtn");
+  mfb.textContent = mf ? "PÅ" : "AV"; mfb.classList.toggle("on", mf);
   const cs = !!n.cold_skip, csb = document.getElementById("coldSkipBtn");
   csb.textContent = cs ? "PÅ" : "AV"; csb.classList.toggle("on", cs);
   document.getElementById("coldSkipRow").style.display = cs ? "" : "none";
