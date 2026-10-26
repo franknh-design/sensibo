@@ -342,9 +342,99 @@ def fetch_sensibo_state():
         cache["temperature"], cache["humidity"] = meas.get("temperature"), meas.get("humidity")
         log.info(f"Sensibo innebygd sensor: {cache['temperature']}°C, AC={'På' if ac.get('on') else 'Av'}")
     record_room_temp(cache.get("temperature"))
+    record_series()
 
     check_boost_complete()
     auto_feedback_check()
+
+# ── Tidsserie for grafen: romtemp, innstilt, ønsket, vifte, ute — én rad per måling ──
+SERIES_FILE = "series.jsonl"
+SERIES_KEEP_DAYS = 35
+FAN_ORDER = ["quiet", "low", "medium", "medium_high", "high", "strong"]  # auto vises for seg
+RANGES = {"1h": 3600, "12h": 12 * 3600, "24h": 24 * 3600, "7d": 7 * 86400, "30d": 30 * 86400}
+
+def record_series():
+    ac = cache.get("ac") or {}
+    row = {"t": int(time.time()), "r": cache.get("temperature"),
+           "s": ac.get("targetTemperature") if ac.get("on") else None, "f": ac.get("fanLevel") if ac.get("on") else "off",
+           "m": cache.get("auto_target_temp"), "u": cache.get("outdoor_temp")}
+    try:
+        with open(SERIES_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError as e:
+        log.error(f"Tidsserie: {e}")
+
+def init_series():
+    """Rydder bort gammelt; første gang fylles det bakover fra timestatus/pumpehendelser i aktivitetsloggen."""
+    cutoff = time.time() - SERIES_KEEP_DAYS * 86400
+    rows = []
+    if os.path.exists(SERIES_FILE):
+        with open(SERIES_FILE, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("t", 0) >= cutoff:
+                    rows.append(r)
+    else:
+        for ev in list(events):
+            d = ev.get("data") or {}
+            if ev.get("kind") not in ("status", "pump", "external") or not d:
+                continue
+            t = datetime.fromisoformat(ev["ts"]).timestamp()
+            if t < cutoff:
+                continue
+            on = d.get("on", True)
+            rows.append({"t": int(t), "r": d.get("room"), "u": d.get("outdoor"), "m": None,
+                         "s": d.get("targetTemperature") if on else None,
+                         "f": d.get("fanLevel") if on else "off", "b": 1})
+        rows.sort(key=lambda r: r["t"])
+    with open(SERIES_FILE, "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(r) + "\n" for r in rows)
+
+def series(range_key):
+    """Nedsamplet til ≤ ~300 punkter: snitt for temperaturer, siste verdi for innstilt/ønsket, mest brukte vifte."""
+    span = RANGES.get(range_key, 86400)
+    now = time.time()
+    start = now - span
+    rows = []
+    with open(SERIES_FILE, encoding="utf-8") as f:
+        for line in f:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if r["t"] >= start:
+                rows.append(r)
+    bucket = max(90, span / 300)
+    out, cur = [], None
+    for r in rows:
+        k = int((r["t"] - start) // bucket)
+        if cur is None or cur["k"] != k:
+            if cur:
+                out.append(cur)
+            cur = {"k": k, "t": int(start + (k + 0.5) * bucket), "rs": [], "us": [], "fans": {}, "s": None, "m": None}
+        if r.get("r") is not None: cur["rs"].append(r["r"])
+        if r.get("u") is not None: cur["us"].append(r["u"])
+        if r.get("s") is not None or r.get("f") == "off": cur["s"] = r.get("s")
+        if r.get("m") is not None: cur["m"] = r["m"]
+        if r.get("f"): cur["fans"][r["f"]] = cur["fans"].get(r["f"], 0) + 1
+    if cur:
+        out.append(cur)
+    pts, last = [], {"r": None, "u": None, "m": None}
+    for c in out:
+        p = {"t": c["t"],
+             "r": round(sum(c["rs"]) / len(c["rs"]), 2) if c["rs"] else None,
+             "u": round(sum(c["us"]) / len(c["us"]), 1) if c["us"] else None,
+             "s": c["s"], "m": c["m"],
+             "f": max(c["fans"], key=c["fans"].get) if c["fans"] else None}
+        for k in ("r", "u", "m"):  # hull (f.eks. pumpehendelser uten romtemp): bruk forrige verdi
+            if p[k] is None:
+                p[k] = last[k]
+            last[k] = p[k]
+        pts.append(p)
+    return {"range": range_key, "start": int(start), "end": int(now), "points": pts}
 
 # ── Bevegelse (romsensoren har bevegelsessensor) — foreløpig bare vist og logget ──
 EMPTY_AFTER = 30 * 60   # ingen bevegelse på 30 min = stua tom
@@ -1229,6 +1319,11 @@ def hourly_status():
     if cache.get("last_status_hour") == hour or cache.get("temperature") is None:
         return
     cache["last_status_hour"] = hour
+    if hour.endswith("T03"):
+        try:
+            init_series()  # nattlig opprydding: behold 35 dager
+        except Exception as e:
+            log.error(f"Tidsserie-opprydding: {e}")
     room, out, ac = cache.get("temperature"), cache.get("outdoor_temp"), cache.get("ac", {})
     out_txt = f" · ute {out:.1f}°C" if out is not None else ""
     ago = motion_ago_min()
@@ -1536,6 +1631,11 @@ class Handler(BaseHTTPRequestHandler):
                 "ts": datetime.now().isoformat()
             })
 
+        elif path == "/api/series":
+            q = urlparse(self.path).query
+            rk = next((p.split("=", 1)[1] for p in q.split("&") if p.startswith("range=")), "24h")
+            self.send_json(series(rk if rk in RANGES else "24h"))
+
         elif path == "/api/history":
             self.send_json({"history": load_history()})
 
@@ -1802,6 +1902,7 @@ if __name__ == "__main__":
     # Last lagret state fra disk
     load_state()
     load_events()
+    init_series()
     add_event("setting", "Varme-serveren startet")
 
     # Initial data-henting

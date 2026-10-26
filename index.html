@@ -168,6 +168,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .rule-btn.on{color:var(--accent);border-color:rgba(var(--accent-rgb),0.35)}
 .night-times{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .night-times input{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:13px;color:var(--accent);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 8px;color-scheme:dark}
+.graf-ranges{justify-content:flex-start}
+.graf-ranges button{flex:1;padding:6px 0;font-size:11px}
+.graf-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin:0 4px 6px}
+.graf-legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.graf-tip{position:absolute;top:0;pointer-events:none;background:rgba(10,15,30,0.92);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:10px;line-height:1.6;color:var(--text);white-space:nowrap;z-index:2}
 .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .log-head .log-title{margin-bottom:0}
 .log-filter{display:flex;gap:4px}
@@ -476,6 +481,31 @@ input[type=time]{color-scheme:dark}
   </div>
 </div>
 
+<!-- GRAF side -->
+<div class="page" id="page-graf" style="display:none;padding:0 0 100px">
+  <div class="header">
+    <div><div class="header-title">Graf</div><div style="font-size:10px;color:var(--muted);margin-top:4px" id="grafSub">Romtemp, innstilt temp og vifte</div></div>
+  </div>
+  <div style="padding:0 24px;display:grid;gap:12px">
+    <div class="log-filter graf-ranges" id="grafRanges">
+      <button data-r="1h">1 t</button><button data-r="12h">12 t</button><button data-r="24h">24 t</button><button data-r="7d">Uke</button><button data-r="30d">Mnd</button>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 12px 10px;position:relative">
+      <div class="graf-legend">
+        <span><i style="background:var(--accent)"></i>Rom</span>
+        <span><i style="background:var(--muted);height:0;border-top:2px dashed var(--muted)"></i>Ønsket</span>
+        <span><i style="background:var(--warm)"></i>Innstilt</span>
+        <span><i style="background:var(--accent3)"></i>Vifte</span>
+      </div>
+      <div id="grafBox" style="position:relative;touch-action:pan-y">
+        <svg id="grafSvg" width="100%" height="380" style="display:block"></svg>
+        <div id="grafTip" class="graf-tip" style="display:none"></div>
+      </div>
+      <div id="grafEmpty" style="display:none;font-size:11px;color:var(--muted);padding:20px;text-align:center">Ingen data i perioden ennå</div>
+    </div>
+  </div>
+</div>
+
 <!-- INNSTILLINGER side -->
 <div class="page" id="page-settings" style="display:none;padding:0 0 100px">
   <div class="header">
@@ -735,6 +765,7 @@ input[type=time]{color-scheme:dark}
 <div class="bottom-nav">
   <button class="nav-btn active" onclick="showPage('oversikt',this)"><span class="nav-icon">🌡</span><span>Oversikt</span></button>
   <button class="nav-btn" onclick="showPage('timeplan',this)"><span class="nav-icon">⏰</span><span>Timeplan</span></button>
+  <button class="nav-btn" onclick="showPage('graf',this)"><span class="nav-icon">📈</span><span>Graf</span></button>
   <button class="nav-btn" onclick="showPage('learn',this)"><span class="nav-icon">🧠</span><span>Læring</span></button>
   <button class="nav-btn" onclick="showPage('settings',this)"><span class="nav-icon">⚙️</span><span>Innstil.</span></button>
 </div>
@@ -1567,8 +1598,99 @@ function addLog(msg, type) {
   list.insertBefore(item,list.firstChild);
 }
 
+
+// ── Graf ──
+let grafRange = "24h", grafData = null;
+try { grafRange = localStorage.getItem("grafRange") || "24h"; } catch(e) {}
+const FAN_Y = {off:0, auto:1, quiet:2, low:3, medium:4, medium_high:5, high:6, strong:6};
+const FAN_TXT = {off:"av", quiet:"stille", low:"lav", medium:"middels", medium_high:"mid-høy", high:"høy", strong:"kraftig", auto:"auto"};
+
+async function loadGraf() {
+  document.querySelectorAll("#grafRanges button").forEach(b => {
+    b.classList.toggle("on", b.dataset.r === grafRange);
+    b.onclick = () => { grafRange = b.dataset.r; try { localStorage.setItem("grafRange", grafRange); } catch(e) {} loadGraf(); };
+  });
+  try {
+    const r = await fetch(`${API}/api/series?range=${grafRange}`);
+    grafData = await r.json();
+  } catch(e) { grafData = null; }
+  drawGraf();
+}
+
+function drawGraf() {
+  const svg = document.getElementById("grafSvg"), d = grafData;
+  const empty = document.getElementById("grafEmpty");
+  const pts = (d && d.points) || [];
+  empty.style.display = pts.some(p => p.r != null) ? "none" : "";
+  svg.style.display = empty.style.display === "none" ? "block" : "none";
+  if (!pts.length) return;
+  const W = svg.clientWidth || 600, padL = 34, padR = 8;
+  const P = [{y0: 6, h: 170}, {y0: 200, h: 100}, {y0: 322, h: 46}];   // rom/ønsket · innstilt · vifte
+  const x = t => padL + (t - d.start) / (d.end - d.start) * (W - padL - padR);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const acc = css("--accent"), muted = css("--muted"), warm = css("--warm"), blue = css("--accent3"), grid = "rgba(255,255,255,0.06)";
+  // skala rom/ønsket
+  const rv = pts.flatMap(p => [p.r, p.m]).filter(v => v != null);
+  let lo = Math.floor(Math.min(...rv) * 2) / 2 - 0.5, hi = Math.ceil(Math.max(...rv) * 2) / 2 + 0.5;
+  if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+  const yR = v => P[0].y0 + P[0].h - (v - lo) / (hi - lo) * P[0].h;
+  const yS = v => P[1].y0 + P[1].h - (Math.max(16, Math.min(30, v)) - 16) / 14 * P[1].h;
+  const yF = f => P[2].y0 + P[2].h - (FAN_Y[f] ?? 0) / 6 * P[2].h;
+  const line = (sel, step) => { let dd = "", prev = null;
+    pts.forEach(p => { const v = sel(p); if (v == null) { prev = null; return; }
+      const X = x(p.t).toFixed(1);
+      if (prev == null) dd += `M${X},${v.toFixed(1)}`;
+      else dd += step ? `H${X}V${v.toFixed(1)}` : `L${X},${v.toFixed(1)}`;
+      prev = v; });
+    return dd; };
+  let g = "";
+  // rutenett + akser
+  const tick = (y, txt) => `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="${grid}"/><text x="${padL - 4}" y="${y + 3}" fill="${muted}" font-size="9" text-anchor="end">${txt}</text>`;
+  for (let v = Math.ceil(lo); v <= hi; v += (hi - lo > 6 ? 2 : 1)) g += tick(yR(v), v + "°");
+  for (const v of [16, 20, 24, 28]) g += tick(yS(v), v + "°");
+  g += tick(yF("auto"), "auto") + tick(yF("medium"), "mid") + tick(yF("high"), "høy");
+  // tidsetiketter
+  const span = d.end - d.start, n = W < 520 ? 4 : 6;  // smal skjerm: færre etiketter
+  for (let i = 0; i <= n; i++) {
+    const t = d.start + span * i / n, dt = new Date(t * 1000);
+    const lab = span > 2 * 86400 ? dt.toLocaleDateString("no-NO", {weekday: span > 8 * 86400 ? undefined : "short", day: "numeric", month: span > 8 * 86400 ? "numeric" : undefined})
+                                 : dt.toLocaleTimeString("no-NO", {hour: "2-digit", minute: "2-digit"});
+    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${P[0].y0}" y2="${P[2].y0 + P[2].h}" stroke="${grid}"/>`;
+    g += `<text x="${x(t)}" y="${P[2].y0 + P[2].h + 11}" fill="${muted}" font-size="9" text-anchor="${i === 0 ? "start" : i === n ? "end" : "middle"}">${lab}</text>`;
+  }
+  g += `<text x="${padL + 2}" y="${P[1].y0 - 4}" fill="${muted}" font-size="9">innstilt på pumpa</text>`;
+  g += `<text x="${padL + 2}" y="${P[2].y0 - 4}" fill="${muted}" font-size="9">vifte</text>`;
+  // data
+  g += `<path d="${line(p => p.m == null ? null : yR(p.m), true)}" fill="none" stroke="${muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  g += `<path d="${line(p => p.r == null ? null : yR(p.r), false)}" fill="none" stroke="${acc}" stroke-width="2"/>`;
+  g += `<path d="${line(p => p.s == null ? null : yS(p.s), true)}" fill="none" stroke="${warm}" stroke-width="1.8"/>`;
+  g += `<path d="${line(p => p.f == null ? null : yF(p.f), true)}" fill="none" stroke="${blue}" stroke-width="1.8"/>`;
+  g += `<line id="grafCursor" x1="0" x2="0" y1="${P[0].y0}" y2="${P[2].y0 + P[2].h}" stroke="${muted}" stroke-width="1" style="display:none"/>`;
+  svg.innerHTML = g;
+  // verdier ved trykk/peker
+  const box = document.getElementById("grafBox"), tip = document.getElementById("grafTip");
+  const show = ev => {
+    const rect = svg.getBoundingClientRect(), px = ev.clientX - rect.left;
+    const t = d.start + (px - padL) / (W - padL - padR) * (d.end - d.start);
+    let best = null; for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    if (!best) return;
+    const cur = document.getElementById("grafCursor"); cur.setAttribute("x1", x(best.t)); cur.setAttribute("x2", x(best.t)); cur.style.display = "";
+    const dt = new Date(best.t * 1000);
+    tip.innerHTML = `${dt.toLocaleString("no-NO", {weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"})}<br>`
+      + `Rom <b style="color:${acc}">${best.r != null ? best.r.toFixed(1) + "°" : "—"}</b>`
+      + (best.m != null ? ` · ønsket ${best.m}°` : "") + (best.u != null ? ` · ute ${best.u}°` : "") + `<br>`
+      + `Innstilt <b style="color:${warm}">${best.s != null ? best.s + "°" : (best.f === "off" ? "av" : "—")}</b> · vifte <b style="color:${blue}">${FAN_TXT[best.f] || best.f || "—"}</b>`;
+    tip.style.display = "";
+    const tx = Math.min(Math.max(x(best.t) - tip.offsetWidth / 2, 0), W - tip.offsetWidth);
+    tip.style.left = tx + "px";
+  };
+  box.onpointermove = show; box.onpointerdown = show;
+  box.onpointerleave = () => { tip.style.display = "none"; const c = document.getElementById("grafCursor"); if (c) c.style.display = "none"; };
+}
+window.addEventListener("resize", () => { if (document.getElementById("page-graf").style.display === "block") drawGraf(); });
+
 // ── Navigasjon ──
-const PAGES = ["oversikt","timeplan","learn","settings"];
+const PAGES = ["oversikt","timeplan","graf","learn","settings"];
 let tpSchedTemp = 22;
 let tpSchedDays = [0,1,2,3,4];
 let settings = {"normalFan":"medium_high","hysteresis":1.0};
@@ -1591,6 +1713,7 @@ function showPage(name, btn) {
   if (name==="timeplan") renderTimeplanPage();
   if (name==="learn") renderLearnPage();
   if (name==="settings") renderSettingsPage();
+  if (name==="graf") loadGraf();
 }
 
 // ── Timeplan-side ──

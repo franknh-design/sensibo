@@ -1,8 +1,9 @@
-.env
-server.log*
-state.json
-heat_history.csv
-nohup.out
 *.bak-*
+.env
 __pycache__/
 events.jsonl
+heat_history.csv
+nohup.out
+series.jsonl
+server.log*
+state.json
