@@ -319,7 +319,7 @@ def enforce_no_cool(ac):
         cache["ac_seen"] = {k: ac.get(k) for k in AC_KEYS}
 
 def fetch_sensibo_state():
-    """Henter AC-state og romsensor-temperatur i ett API-kall"""
+    """Henter AC-state og romsensor-temperatur i ett API-kall, og kjører så styringen på FERSK temp."""
     data = sensibo_get(f"/pods/{SENSIBO_DEVICE_UID}", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
     if not data:
         return
@@ -329,25 +329,46 @@ def fetch_sensibo_state():
     enforce_no_cool(ac)
     cache["ac"] = ac
     cache["last_sensibo"] = time.time()
+
+    # Romtemperatur: ekstern romsensor (mainMeasurementsSensor), ellers innebygd
+    main = result.get("mainMeasurementsSensor")
+    meas = (main or {}).get("measurements", {}) if main and main.get("isMainSensor") else {}
+    if meas.get("temperature") is not None:
+        cache["temperature"], cache["humidity"] = meas["temperature"], meas.get("humidity")
+        log.info(f"Sensibo romsensor {main.get('qrId')}: {meas['temperature']}°C, {meas.get('humidity')}%, AC={'På' if ac.get('on') else 'Av'}")
+    else:
+        meas = result.get("measurements", {})
+        cache["temperature"], cache["humidity"] = meas.get("temperature"), meas.get("humidity")
+        log.info(f"Sensibo innebygd sensor: {cache['temperature']}°C, AC={'På' if ac.get('on') else 'Av'}")
+    record_room_temp(cache.get("temperature"))
+
     check_boost_complete()
     auto_feedback_check()
 
-    # Hent temperatur fra ekstern romsensor (mainMeasurementsSensor)
-    main = result.get("mainMeasurementsSensor")
-    if main and main.get("isMainSensor"):
-        meas = main.get("measurements", {})
-        temp = meas.get("temperature")
-        if temp is not None:
-            cache["temperature"] = temp
-            cache["humidity"] = meas.get("humidity")
-            log.info(f"Sensibo romsensor {main.get('qrId')}: {temp}°C, {meas.get('humidity')}%, AC={'På' if ac.get('on') else 'Av'}")
-            return
+# ── D-ledd: hvor fort rommet endrer seg ──
+ROOM_HIST_SECONDS = 3600
+RATE_WINDOW = 15 * 60       # stigning/fall måles over siste ~15 min
 
-    # Fallback: innebygd sensor
-    meas = result.get("measurements", {})
-    cache["temperature"] = meas.get("temperature")
-    cache["humidity"] = meas.get("humidity")
-    log.info(f"Sensibo innebygd sensor: {cache['temperature']}°C, AC={'På' if ac.get('on') else 'Av'}")
+def record_room_temp(t):
+    if t is None:
+        return
+    now = time.time()
+    hist = cache.setdefault("room_hist", [])
+    hist.append((now, t))
+    while hist and now - hist[0][0] > ROOM_HIST_SECONDS:
+        hist.pop(0)
+
+def room_rate():
+    """°C per time over siste ~15 min (minst 10 min data), ellers None."""
+    hist = cache.get("room_hist") or []
+    if len(hist) < 3:
+        return None
+    now, t_now = hist[-1]
+    old = [h for h in hist if now - h[0] >= RATE_WINDOW]
+    t0, v0 = old[-1] if old else hist[0]
+    if now - t0 < 10 * 60:
+        return None
+    return (t_now - v0) / ((now - t0) / 3600)
 
 # (fetch_room_sensor er slått sammen med fetch_sensibo_state)
 
@@ -499,6 +520,11 @@ STAGED_DONE_BELOW = 0.1    # ferdig når rommet er innen 0,1 °C av ønsket
 STAGED_RISING = 0.2        # har rommet steget så mye siden forrige trinn, venter vi (det virker)
 STAGED_FAN_ABOVE = 3       # holdes pumpa mer enn 3° over ønsket, beholdes trinn-viften (ikke auto)
 FLOOR_RELEASE_ABOVE = 0.8  # gulvet gis opp bare når rommet er tydelig for varmt (sol, vedovn o.l.)
+# D-ledd (fart): bremse før målet når rommet stiger fort, reagere tidligere når det faller fort
+D_RISE = 1.2               # °C/t (≈0,3 på 15 min) = stiger fort
+D_FALL = -0.8              # °C/t = faller fort
+D_BRAKE_WITHIN = 0.5       # stiger det fort og rommet er innen 0,5 av målet: avslutt trinnene nå
+D_RISING = 0.3             # °C/t: rommet stiger allerede — ikke ta neste trinn
 
 def get_staged():
     st = {**STAGED_DEFAULT, **(cache.get("staged") or {})}
@@ -632,11 +658,15 @@ def auto_feedback_check():
     too_warm = staged["enabled"] and current > target + 1.0
     if too_warm:
         adjust_every = HOLD_ADJUST_EVERY  # tydelig for varmt (væromslag o.l.): raskere ned
+    rate = room_rate()
+    rising_fast = staged["enabled"] and rate is not None and rate >= D_RISE and current > target + STAGED_DONE_BELOW
+    if rising_fast:
+        adjust_every = 15 * 60  # D: over målet og stiger fort — vent ikke en time
     if not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
         new = offset
         if current < target - HOLD_LOW and not staged["enabled"]:
             new = min(HOLD_OFFSET_MAX, offset + 1)
-        elif current > target + HOLD_HIGH:
+        elif current > target + HOLD_HIGH or rising_fast:
             floor = cache.get("hold_floor", HOLD_OFFSET_MIN) if staged["enabled"] else HOLD_OFFSET_MIN
             if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
                 floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
@@ -768,14 +798,24 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     if not esc and (current < target - st["full_below"] or _is_heating(ac)):
         return False  # langt under / full trøkk pågår: la den gjøre seg ferdig (dør åpen e.l.)
 
+    rate = room_rate()
     if esc:
-        if current >= target - STAGED_DONE_BELOW:
+        braking = rate is not None and rate >= D_RISE and current >= target - D_BRAKE_WITHIN
+        if current >= target - STAGED_DONE_BELOW or braking:
             # Nådd: hold på innstillingen som virket (pumpa kan trenge f.eks. 27° for å holde 23°).
             # Den trappes ned bare når rommet blir for varmt (holdregulatoren, −1 per halvtime).
             cache.pop("esc", None)
             set_t = ac.get("targetTemperature") or target
-            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(set_t - target))))
-            cache["hold_fan"] = ac.get("fanLevel")  # behold viften som virket (også høy, f.eks. ved −10)
+            hold_t = set_t
+            hold_fan = ac.get("fanLevel")  # behold viften som virket (også høy, f.eks. ved −10)
+            if rate is not None and rate >= D_RISE:
+                # Mye varme på vei: hold ett hakk under (og høy vifte ned til trinn-viften)
+                hold_t = set_t - 1
+                if hold_fan == "high":
+                    hold_fan = st["fan"]
+                add_event("auto", f"Bremser: rommet stiger {rate:.1f}°C/t ved {current:.1f}°C — holder {hold_t}°C, ikke {set_t}°C")
+            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(hold_t - target))))
+            cache["hold_fan"] = hold_fan
             cache["full_heat"] = False
             cache["hl_applied_at"] = now  # ferskt bevis — ikke overstyr med lært verdi den neste timen
             cache["hold_adjusted_at"] = now
@@ -784,7 +824,11 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             add_event("auto", f"Trinnvis oppvarming ferdig: rommet {current:.1f}°C etter "
                               f"{(now - esc['start']) / 60:.0f} min (nådde {set_t}°C · {FAN_NO.get(ac.get('fanLevel'), ac.get('fanLevel'))} vifte)")
             return False  # holdet tar over med samme temp og vifte
-        if now - esc["last_step"] < st["every_min"] * 60 or current >= esc["room_at_step"] + STAGED_RISING:
+        wait = st["every_min"] * 60
+        if rate is not None and rate <= D_FALL:
+            wait //= 2  # faller fort: ta neste trinn etter halv tid
+        rising = rate is not None and rate >= D_RISING
+        if now - esc["last_step"] < wait or current >= esc["room_at_step"] + STAGED_RISING or rising:
             if current >= esc["room_at_step"] + STAGED_RISING:
                 # Det virker: nullstill klokka og referansen, ikke trapp opp
                 esc.update(last_step=now, room_at_step=current)
@@ -797,7 +841,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         else:
             return True  # alt er maks — vent
     else:
-        if current >= target - STAGED_START_BELOW:
+        falling_fast = rate is not None and rate <= D_FALL and current < target - STAGED_DONE_BELOW
+        if current >= target - STAGED_START_BELOW and not falling_fast:
             return False
         set_t = ac.get("targetTemperature") or int(round(target))
         new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), _step_fan(ac, st), f"+{st['step']}°"
