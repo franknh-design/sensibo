@@ -497,6 +497,8 @@ STAGED_DEFAULT = {"enabled": False, "step": 2, "every_min": 30, "full_below": 2.
 STAGED_START_BELOW = 0.3   # start trinn når rommet er så mye under ønsket
 STAGED_DONE_BELOW = 0.1    # ferdig når rommet er innen 0,1 °C av ønsket
 STAGED_RISING = 0.2        # har rommet steget så mye siden forrige trinn, venter vi (det virker)
+STAGED_FAN_ABOVE = 3       # holdes pumpa mer enn 3° over ønsket, beholdes trinn-viften (ikke auto)
+FLOOR_RELEASE_ABOVE = 0.8  # gulvet gis opp bare når rommet er tydelig for varmt (sol, vedovn o.l.)
 
 def get_staged():
     st = {**STAGED_DEFAULT, **(cache.get("staged") or {})}
@@ -615,15 +617,22 @@ def auto_feedback_check():
         if current < target - HOLD_LOW and not staged["enabled"]:
             new = min(HOLD_OFFSET_MAX, offset + 1)
         elif current > target + HOLD_HIGH:
-            new = max(HOLD_OFFSET_MIN, offset - 1)
+            floor = cache.get("hold_floor", HOLD_OFFSET_MIN) if staged["enabled"] else HOLD_OFFSET_MIN
+            if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
+                floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
+                cache["hold_floor"] = floor
+            new = max(HOLD_OFFSET_MIN, floor, offset - 1)
         if new != offset:
             cache["hold_offset"] = offset = new
             cache["hold_adjusted_at"] = now
             save_state()
-    wanted_temp = int(round(target + offset))
-    if ac.get("on") and ac.get("targetTemperature") == wanted_temp and ac.get("fanLevel") == normal_fan:
+    wanted_temp = min(30, int(round(target + offset)))
+    hold_fan = normal_fan
+    if staged["enabled"] and offset > STAGED_FAN_ABOVE:
+        hold_fan = staged["fan"]  # høyt hold etter trinn: fast rolig vifte, ikke auto (som skrur seg opp)
+    if ac.get("on") and ac.get("targetTemperature") == wanted_temp and ac.get("fanLevel") == hold_fan:
         return
-    payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": normal_fan}
+    payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": hold_fan}
     if sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C, mål {target:g}°C)"):
         cache["ac"].update(payload)
         cache["hold_adjusted_at"] = now
@@ -638,16 +647,17 @@ def staged_check(uid, current, target, st, ac, normal_fan):
 
     if esc:
         if current >= target - STAGED_DONE_BELOW:
-            # Nådd: vanlig vifte igjen, hold ett trinn under innstillingen som virket
+            # Nådd: hold på innstillingen som virket (pumpa kan trenge f.eks. 27° for å holde 23°).
+            # Den trappes ned bare når rommet blir for varmt (holdregulatoren, −1 per halvtime).
             cache.pop("esc", None)
             set_t = ac.get("targetTemperature") or target
-            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(HOLD_OFFSET_MAX, int(round(set_t - st["step"] - target))))
+            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(set_t - target))))
             cache["hold_adjusted_at"] = now
             save_state()
             log_auto_heat_session(current)
             add_event("auto", f"Trinnvis oppvarming ferdig: rommet {current:.1f}°C etter "
                               f"{(now - esc['start']) / 60:.0f} min (nådde {set_t}°C · {FAN_NO.get(ac.get('fanLevel'), ac.get('fanLevel'))} vifte)")
-            return False  # holdet tar over og sender normalinnstilling
+            return False  # holdet tar over (samme temp; høy vifte trappes ned til trinn-viften)
         if now - esc["last_step"] < st["every_min"] * 60 or current >= esc["room_at_step"] + STAGED_RISING:
             if current >= esc["room_at_step"] + STAGED_RISING:
                 # Det virker: nullstill klokka og referansen, ikke trapp opp
@@ -665,6 +675,11 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             return False
         set_t = ac.get("targetTemperature") or int(round(target))
         new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), st["fan"], f"+{st['step']}°"
+        # Holdet vi hadde var ikke nok — neste gang trappes det ikke ned forbi ett hakk over dette
+        if ac.get("on") and set_t < 30:
+            floor = int(set_t - target) + 1
+            if floor > cache.get("hold_floor", HOLD_OFFSET_MIN):
+                cache["hold_floor"] = floor
         esc = {"start": now, "last_step": now, "room_at_step": current}
         cache["esc"] = esc
         cache["auto_heat_start"] = {"temp": current, "time": now, "outdoor": cache.get("outdoor_temp")}
@@ -1022,7 +1037,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "filter", "filter_push_day"
 ]
 
 def save_state():
