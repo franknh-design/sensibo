@@ -182,7 +182,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .log-item .log-tag{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;padding:1px 6px;border-radius:5px;border:1px solid var(--border);white-space:nowrap;margin-left:auto}
 .log-k-pump{color:var(--accent)} .log-k-auto{color:var(--accent)} .log-k-boost{color:var(--warm)}
 .log-k-schedule{color:var(--accent3)} .log-k-external{color:var(--warm)} .log-k-error{color:var(--danger)}
-.log-k-status{color:var(--muted)} .log-k-setting{color:var(--text)}
+.log-k-status{color:var(--muted)} .log-k-motion{color:var(--accent3)} .log-k-setting{color:var(--text)}
 
 /* Toast */
 .toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--text);z-index:100;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
@@ -247,6 +247,7 @@ input[type=time]{color-scheme:dark}
         <div class="temp-label">Rom nå</div>
         <div class="temp-value" id="currentTempEl">—<span class="unit">°</span></div>
         <div class="temp-sub">Mål: <span id="targetDisplay" style="color:var(--accent)">—</span> &nbsp;|&nbsp; Ute: <span id="outerDisplay">—</span><span id="outerSrc" style="font-size:9px;color:var(--muted);margin-left:4px"></span></div>
+        <div class="temp-sub" id="motionLine" style="display:none;margin-top:4px"></div>
       </div>
     </div>
   </div>
@@ -982,6 +983,17 @@ function applyStatus(d) {
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     S.acFan = d.ac.fanLevel; S.acTemp = d.ac.targetTemperature;
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    const ml = document.getElementById("motionLine");
+    if (ml) {
+      const m = d.motion || {};
+      ml.style.display = m.has ? "" : "none";
+      if (m.has) {
+        const a = m.ago_min, fmt = x => x < 60 ? `${x} min` : `${Math.floor(x / 60)} t ${x % 60} min`;
+        ml.innerHTML = a == null ? `<span style="color:var(--muted)">👤 venter på bevegelse …</span>`
+          : a < 5 ? `<span style="color:var(--accent)">👤 bevegelse nå</span>`
+          : `<span style="color:var(--muted)">👤 ingen bevegelse på ${fmt(a)}</span>`;
+      }
+    }
     if (d.hold_learn) { S.holdLearn = d.hold_learn; S.holdLearnNow = d.hold_learn_now; S.outdoorNow = d.outdoor_temp; renderHoldLearn(); }
     if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
     if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
@@ -1488,7 +1500,7 @@ function drawChart(vals) {
 // ── Log ──
 // Serveren fører loggen (auto, timeplan, endringer utenfra, timestatus) — appen viser den.
 const LOG_TAGS = {pump:"pumpe", auto:"auto", boost:"boost", schedule:"timeplan",
-  external:"utenfra", error:"feil", status:"status", setting:"innstilling"};
+  external:"utenfra", error:"feil", status:"status", setting:"innstilling", motion:"bevegelse"};
 const escHtml = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function dayLabel(d) {

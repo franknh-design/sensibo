@@ -320,7 +320,7 @@ def enforce_no_cool(ac):
 
 def fetch_sensibo_state():
     """Henter AC-state og romsensor-temperatur i ett API-kall, og kjører så styringen på FERSK temp."""
-    data = sensibo_get(f"/pods/{SENSIBO_DEVICE_UID}", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements"})
+    data = sensibo_get(f"/pods/{SENSIBO_DEVICE_UID}", {"fields": "acState,motionSensors,mainMeasurementsSensor,measurements,roomIsOccupied"})
     if not data:
         return
     result = data.get("result", {})
@@ -333,6 +333,7 @@ def fetch_sensibo_state():
     # Romtemperatur: ekstern romsensor (mainMeasurementsSensor), ellers innebygd
     main = result.get("mainMeasurementsSensor")
     meas = (main or {}).get("measurements", {}) if main and main.get("isMainSensor") else {}
+    track_motion(meas.get("motion"), result.get("roomIsOccupied"))
     if meas.get("temperature") is not None:
         cache["temperature"], cache["humidity"] = meas["temperature"], meas.get("humidity")
         log.info(f"Sensibo romsensor {main.get('qrId')}: {meas['temperature']}°C, {meas.get('humidity')}%, AC={'På' if ac.get('on') else 'Av'}")
@@ -344,6 +345,38 @@ def fetch_sensibo_state():
 
     check_boost_complete()
     auto_feedback_check()
+
+# ── Bevegelse (romsensoren har bevegelsessensor) — foreløpig bare vist og logget ──
+EMPTY_AFTER = 30 * 60   # ingen bevegelse på 30 min = stua tom
+
+def track_motion(motion, occupied):
+    if not (cache.get("motion_cfg") or {}).get("enabled"):
+        cache["has_motion"] = False
+        return  # slått av for denne stua (på bare hos Frank)
+    if motion is None and occupied is None:
+        return  # sensoren har ikke bevegelse (f.eks. innebygd sensor)
+    now = time.time()
+    cache["has_motion"] = True
+    cache["occupied"] = occupied
+    was_present = cache.get("present")
+    if motion:
+        if was_present is False:
+            away = (now - cache["motion_last"]) / 60 if cache.get("motion_last") else None
+            add_event("motion", "Bevegelse i stua" + (f" (tom i {fmt_minutes(away)})" if away else ""))
+        cache["motion_last"] = now
+        cache["present"] = True
+    elif cache.get("motion_last") and now - cache["motion_last"] >= EMPTY_AFTER and was_present is not False:
+        cache["present"] = False
+        add_event("motion", f"Ingen bevegelse på {EMPTY_AFTER // 60} min — stua tom")
+    elif was_present is None:
+        cache["present"] = bool(occupied)
+
+def fmt_minutes(m):
+    m = int(round(m))
+    return f"{m} min" if m < 60 else f"{m // 60} t {m % 60} min"
+
+def motion_ago_min():
+    return None if not cache.get("motion_last") else int((time.time() - cache["motion_last"]) / 60)
 
 # ── D-ledd: hvor fort rommet endrer seg ──
 ROOM_HIST_SECONDS = 3600
@@ -1198,7 +1231,10 @@ def hourly_status():
     cache["last_status_hour"] = hour
     room, out, ac = cache.get("temperature"), cache.get("outdoor_temp"), cache.get("ac", {})
     out_txt = f" · ute {out:.1f}°C" if out is not None else ""
-    add_event("status", f"Rom {room:.1f}°C{out_txt} · pumpe {describe_ac(ac)}",
+    ago = motion_ago_min()
+    mot_txt = "" if not cache.get("has_motion") else (" · bevegelse nå" if ago is not None and ago < 5
+              else f" · sist bevegelse {fmt_minutes(ago)} siden" if ago is not None else "")
+    add_event("status", f"Rom {room:.1f}°C{out_txt} · pumpe {describe_ac(ac)}{mot_txt}",
               room=room, outdoor=out, **{k: ac.get(k) for k in AC_KEYS})
 
 def background_loop():
@@ -1264,7 +1300,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "motion_last", "present", "has_motion", "motion_cfg", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1489,6 +1525,8 @@ class Handler(BaseHTTPRequestHandler):
                 "hold_learn": cache.get("hold_learn") or {},
                 "hold_learn_now": (lambda p: None if p is None else {"offset": round(p[0], 1), "fan": p[1]})(hl_predict(cache.get("outdoor_temp"))),
                 "hold_fan": cache.get("hold_fan"),
+                "motion": {"has": bool(cache.get("has_motion")), "ago_min": motion_ago_min(),
+                           "present": cache.get("present"), "occupied": cache.get("occupied")},
                 "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
                 "events": recent_events(hours=48, limit=500),
@@ -1586,6 +1624,11 @@ class Handler(BaseHTTPRequestHandler):
                         cache["filter_push_day"] = None
                         add_event("setting", f"Filtre sist rengjort satt til {d:%d.%m.%Y}")
                 cache["filter"] = {"interval_days": days, "last_cleaned": last}
+            if "motion_cfg" in body and isinstance(body["motion_cfg"], dict):
+                en = bool(body["motion_cfg"].get("enabled"))
+                if en != bool((cache.get("motion_cfg") or {}).get("enabled")):
+                    cache["motion_cfg"] = {"enabled": en}
+                    add_event("setting", "Bevegelse vises og logges" if en else "Bevegelse av")
             if "staged" in body and isinstance(body["staged"], dict):
                 st = {**get_staged(), **body["staged"]}
                 new_st = {"enabled": bool(st["enabled"]), "step": max(1, min(4, int(st["step"]))),
