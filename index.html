@@ -477,6 +477,40 @@ input[type=time]{color-scheme:dark}
   </div>
   <div class="card-grid" style="padding:0 24px;display:grid;gap:14px">
 
+    <div id="stagedCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Trinnvis oppvarming</span>
+        <button class="rule-btn" id="stagedBtn" onclick="saveStaged({enabled: !(S.staged && S.staged.enabled)})">AV</button>
+      </div>
+      <div style="padding:18px;display:grid;gap:14px" id="stagedBody">
+        <div>
+          <div class="field-label">Øk innstilt temp med</div>
+          <div class="temp-picker">
+            <button onclick="saveStaged({step: S.staged.step - 1})">−</button>
+            <div class="val" id="stagedStep">2°</div>
+            <button onclick="saveStaged({step: S.staged.step + 1})">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">…hvis rommet ikke har steget etter</div>
+          <div class="temp-picker">
+            <button onclick="saveStaged({every_min: S.staged.every_min - 5})">−</button>
+            <div class="val" id="stagedEvery">30 min</div>
+            <button onclick="saveStaged({every_min: S.staged.every_min + 5})">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Full trøkk med en gang når rommet er under ønsket med</div>
+          <div class="temp-picker">
+            <button onclick="saveStaged({full_below: S.staged.full_below - 0.5})">−</button>
+            <div class="val" id="stagedFull">2°</div>
+            <button onclick="saveStaged({full_below: S.staged.full_below + 0.5})">+</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="stagedExplain"></div>
+      </div>
+    </div>
+
     <div id="stoveCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
         <span>Vedovn-stopp</span>
@@ -618,7 +652,7 @@ input[type=time]{color-scheme:dark}
           <div class="field-label">Filtrene sist rengjort</div>
           <input type="date" class="time-input" id="filterLastInput" onchange="setFilterLast(this.value)">
         </div>
-        <div>
+        <div id="hystRow">
           <div class="field-label">Hysteresis — når oppvarming starter</div>
           <div class="temp-picker">
             <button onclick="adjSetting('hysteresis',-0.1)">−</button>
@@ -915,6 +949,7 @@ function applyStatus(d) {
     S.pausedUntil = d.auto_paused_until || null;
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
+    if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
     if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
     if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; S.nightColdSkip = d.night_cold_skip; renderNight(); }
     if (d.hold_offset != null) {
@@ -1032,6 +1067,39 @@ function openNightSettings() {
   const btn = document.querySelectorAll(".nav-btn")[3];
   showPage("settings", btn);
   setTimeout(() => document.getElementById("nightCard").scrollIntoView({block:"start"}), 150);
+}
+
+const FAN_NO_UI = {quiet:"stille", low:"lav", medium:"middels", medium_high:"middels-høy", high:"høy", auto:"auto"};
+function renderStaged() {
+  const st = S.staged; if (!st) return;
+  const b = document.getElementById("stagedBtn");
+  b.textContent = st.enabled ? "PÅ" : "AV"; b.classList.toggle("on", st.enabled);
+  document.getElementById("stagedBody").querySelectorAll(":scope > div:not(#stagedExplain)").forEach(el => el.style.display = st.enabled ? "" : "none");
+  const hr = document.getElementById("hystRow"); if (hr) hr.style.display = st.enabled ? "none" : "";
+  document.getElementById("stagedStep").textContent = st.step + "°";
+  document.getElementById("stagedEvery").textContent = st.every_min + " min";
+  document.getElementById("stagedFull").textContent = String(st.full_below).replace(".", ",") + "°";
+  document.getElementById("stagedExplain").textContent = st.enabled
+    ? (S.stagedActive ? "⏫ Trinnvis oppvarming pågår nå. " : "")
+      + `Når rommet faller 0,3° under ønsket: innstilt temp +${st.step}° med ${FAN_NO_UI[st.fan] || st.fan} vifte. Har rommet ikke steget etter ${st.every_min} min: +${st.step}° til, opp til 30°. Først da høy vifte. Er rommet ${String(st.full_below).replace(".", ",")}° eller mer under ønsket, går den rett på 30° + høy vifte.`
+    : "Av — pumpa går rett på 30° + høy vifte når rommet faller under ønsket med hysteresen (under Varmepumpe).";
+}
+
+let _stagedSave = null;
+function saveStaged(change) {
+  if (!S.staged) return;
+  S.staged = {...S.staged, ...change};
+  S.staged.step = Math.max(1, Math.min(4, S.staged.step));
+  S.staged.every_min = Math.max(10, Math.min(90, S.staged.every_min));
+  S.staged.full_below = Math.max(0.5, Math.min(5, S.staged.full_below));
+  S.stagedSaving = true;
+  renderStaged();
+  clearTimeout(_stagedSave);
+  _stagedSave = setTimeout(() => {
+    fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({staged: S.staged})})
+      .then(r => r.json()).then(d => { S.stagedSaving = false; showToast(d.ok ? "Lagret ✓" : "Kunne ikke lagre", d.ok ? "ok" : "err"); setTimeout(fetchStatus, 800); })
+      .catch(() => { S.stagedSaving = false; showToast("Kunne ikke lagre","err"); });
+  }, 700);
 }
 
 function renderStove() {
