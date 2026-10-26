@@ -626,7 +626,9 @@ def get_outdoor_rule():
 
 # Nattsenking: eget mål om natta; om morgenen går målet tilbake til dagregelen (utetemp).
 # weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
-NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True}
+NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True,
+                 "cold_skip": False, "cold_skip_below": -5}  # ingen nattsenking når det er kaldere enn dette ute
+COLD_SKIP_BAND = 1.0  # nattsenking tilbake først når det er 1 °C over grensen (hindrer flipping)
 
 def get_night():
     return {**NIGHT_DEFAULT, **(cache.get("night") or {})}
@@ -718,6 +720,25 @@ def outdoor_rule_check(force=False):
 
     now = datetime.now(LOCAL_TZ)
     is_night, night_end = night_window(now, night) if night["enabled"] else (False, None)
+
+    # Kaldt ute: hopp over nattsenkingen (huset bruker lang tid på å ta igjen varmen)
+    skip = cache.get("night_cold_skip", False)
+    if night.get("cold_skip") and out is not None:
+        lim = night["cold_skip_below"]
+        new_skip = out < lim if not skip else out < lim + COLD_SKIP_BAND
+        if new_skip != skip and is_night:
+            if new_skip:
+                cache["cold_skip_logged_for"] = night_end.isoformat()
+            add_event("auto", f"Ute {out:.1f}°C — {'ingen nattsenking i natt (kaldere enn ' + format(lim, 'g') + '°C)' if new_skip else 'nattsenking igjen'}")
+        skip = new_skip
+    else:
+        skip = False
+    cache["night_cold_skip"] = skip
+    if skip and is_night and cache.get("cold_skip_logged_for") != night_end.isoformat():
+        cache["cold_skip_logged_for"] = night_end.isoformat()
+        add_event("auto", f"Ute {out:.1f}°C — ingen nattsenking i natt (kaldere enn {night['cold_skip_below']:g}°C)")
+    if skip:
+        is_night = False
     cache["preheat"] = None
     if is_night and night.get("preheat", True):
         # Har forvarmingen allerede startet for denne natta, står den (ikke tilbake til natt)
@@ -1154,6 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
                 "outdoor_rule": get_outdoor_rule(),
                 "night": get_night(),
                 "preheat": cache.get("preheat"),
+                "night_cold_skip": bool(cache.get("night_cold_skip")),
                 "stove": get_stove(),
                 "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
@@ -1269,13 +1291,16 @@ class Handler(BaseHTTPRequestHandler):
                         n[k] = f"{h:02d}:{m:02d}"
                     new_night = {"enabled": bool(n["enabled"]), "start": n["start"], "weekend_start": n["weekend_start"],
                                  "end": n["end"], "temp": max(16, min(28, round(float(n["temp"])))),
-                                 "preheat": bool(n.get("preheat", True))}
+                                 "preheat": bool(n.get("preheat", True)),
+                                 "cold_skip": bool(n.get("cold_skip", False)),
+                                 "cold_skip_below": max(-30, min(10, round(float(n.get("cold_skip_below", -5)))))}
                 except (ValueError, AssertionError, TypeError):
                     self.send_json({"ok": False, "error": "Ugyldig klokkeslett"}); return
                 if new_night != get_night():
                     cache["night"] = new_night
                     add_event("setting", "Nattsenking av" if not new_night["enabled"] else
-                              f"Nattsenking: {new_night['temp']:g}°C fra {new_night['start']} (helg {new_night['weekend_start']}) til {new_night['end']}")
+                              f"Nattsenking: {new_night['temp']:g}°C fra {new_night['start']} (helg {new_night['weekend_start']}) til {new_night['end']}"
+                              + (f", ikke når det er kaldere enn {new_night['cold_skip_below']}°C ute" if new_night["cold_skip"] else ""))
                     outdoor_rule_check(force=True)
             if "target_temp" in body or body.get("auto_enabled"):
                 resume_from_pause("endring i appen")
