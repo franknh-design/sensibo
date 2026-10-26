@@ -514,7 +514,8 @@ HOLD_LOW, HOLD_HIGH = 0.3, 0.3   # rom under mål−0,3 → påslag +1; over må
 HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
 
 # ── Trinnvis oppvarming: varmere luft først, høy vifte bare som siste utvei ──
-STAGED_DEFAULT = {"enabled": False, "step": 2, "every_min": 30, "full_below": 2.0, "fan": "medium_high"}
+STAGED_DEFAULT = {"enabled": False, "step": 2, "every_min": 30, "full_below": 2.0, "fan": "medium_high",
+                  "min_offset": 0}   # pumpa aldri lavere enn ønsket + dette (23 ved ønsket 23 holder ofte ikke)
 STAGED_START_BELOW = 0.3   # start trinn når rommet er så mye under ønsket
 STAGED_DONE_BELOW = 0.1    # ferdig når rommet er innen 0,1 °C av ønsket
 STAGED_RISING = 0.2        # har rommet steget så mye siden forrige trinn, venter vi (det virker)
@@ -526,6 +527,11 @@ D_FALL = -0.8              # °C/t = faller fort
 D_BRAKE_WITHIN = 0.5       # stiger det fort og rommet er innen 0,5 av målet: avslutt trinnene nå
 D_RISING = 0.3             # °C/t: rommet stiger allerede — ikke ta neste trinn
 D_RISE_FULL = 2.0          # full gass stiger naturlig fort — brems først over 2 °C/t
+
+def min_off():
+    """Laveste påslag holdet kan gå til."""
+    st = get_staged()
+    return max(HOLD_OFFSET_MIN, int(st.get("min_offset", 0))) if st["enabled"] else HOLD_OFFSET_MIN
 
 def get_staged():
     st = {**STAGED_DEFAULT, **(cache.get("staged") or {})}
@@ -674,6 +680,8 @@ def auto_feedback_check():
     rising_fast = staged["enabled"] and rate is not None and rate >= D_RISE and current > target + STAGED_DONE_BELOW
     if rising_fast:
         adjust_every = 15 * 60  # D: over målet og stiger fort — vent ikke en time
+    if offset < min_off():
+        cache["hold_offset"] = offset = min_off()  # aldri under «ønsket + X»
     if not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
         new = offset
         if current < target - HOLD_LOW and not staged["enabled"]:
@@ -683,7 +691,7 @@ def auto_feedback_check():
             if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
                 floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
                 cache["hold_floor"], cache["hold_floor_at"] = floor, now
-            new = max(HOLD_OFFSET_MIN, floor, offset - (2 if too_warm else 1))
+            new = max(min_off(), floor, offset - (2 if too_warm else 1))
             if staged["enabled"] and cache.get("hold_fan") == "high":
                 # For varmt med høy vifte: senk viften først (stillere), temperaturen etterpå
                 cache["hold_fan"] = staged["fan"]
@@ -784,7 +792,7 @@ def hold_learning(current, target, offset, heating, fan):
     if res is None or now - cache.get("hl_applied_at", 0) < HL_APPLY_EVERY:
         return None
     pred, lfan = res
-    want = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(pred))))
+    want = max(min_off(), min(int(30 - target), int(round(pred))))
     fan_change = bool(lfan) and lfan != fan and (lfan == "high" or fan == "high")
     if (want == offset or abs(pred - offset) < 0.75) and not fan_change:
         return None
@@ -838,7 +846,7 @@ def staged_check(uid, current, target, st, ac, normal_fan):
                 if hold_fan == "high":
                     hold_fan = st["fan"]
                 add_event("auto", f"Bremser: rommet stiger {rate:.1f}°C/t ved {current:.1f}°C — holder {hold_t}°C, ikke {set_t}°C")
-            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(int(30 - target), int(round(hold_t - target))))
+            cache["hold_offset"] = max(min_off(), min(int(30 - target), int(round(hold_t - target))))
             cache["hold_fan"] = hold_fan
             cache["full_heat"] = False
             cache["hl_applied_at"] = now  # ferskt bevis — ikke overstyr med lært verdi den neste timen
@@ -1256,7 +1264,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1583,13 +1591,14 @@ class Handler(BaseHTTPRequestHandler):
                 new_st = {"enabled": bool(st["enabled"]), "step": max(1, min(4, int(st["step"]))),
                           "every_min": max(10, min(90, int(st["every_min"]))),
                           "full_below": max(0.5, min(5.0, round(float(st["full_below"]) * 2) / 2)),
-                          "fan": st["fan"] if st["fan"] in ("quiet", "low", "medium", "medium_high") else "medium_high"}
+                          "fan": st["fan"] if st["fan"] in ("quiet", "low", "medium", "medium_high") else "medium_high",
+                          "min_offset": max(-3, min(4, int(st.get("min_offset", 0))))}
                 if new_st != get_staged():
                     cache["staged"] = new_st
                     if not new_st["enabled"]:
                         cache.pop("esc", None)
                     add_event("setting", (f"Trinnvis oppvarming: +{new_st['step']}° hvert {new_st['every_min']}. min, "
-                                          f"høy vifte sist, full trøkk når {new_st['full_below']:g}° under")
+                                          f"høy vifte sist, full trøkk når {new_st['full_below']:g}° under, aldri under ønsket {new_st['min_offset']:+d}°")
                               if new_st["enabled"] else "Trinnvis oppvarming av")
                     cache["last_sensibo"] = 0
             if "stove" in body and isinstance(body["stove"], dict):
