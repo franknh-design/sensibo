@@ -814,8 +814,13 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     """Trinnvis oppvarming. True = trinnene styrer pumpa nå (resten av auto hopper over)."""
     esc = cache.get("esc")
     now = time.time()
-    if not esc and (current < target - st["full_below"] or _is_heating(ac)):
-        return False  # langt under / full trøkk pågår: la den gjøre seg ferdig (dør åpen e.l.)
+    handover = False
+    if not esc and _is_heating(ac) and not cache.get("morning_full") and current >= target - st["full_below"]:
+        # Full trøkk uten god grunn (ikke morgen, ikke langt under) — gå over til rolige trinn
+        cache["full_heat"] = False
+        handover = True
+    elif not esc and (current < target - st["full_below"] or _is_heating(ac)):
+        return False  # langt under / morgen på full gass: la den gjøre seg ferdig
 
     rate = room_rate()
     if esc:
@@ -862,10 +867,13 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     else:
         falling_fast = rate is not None and rate <= D_FALL and current < target - STAGED_DONE_BELOW
         if current >= target - STAGED_START_BELOW and not falling_fast:
-            return False
-        if rate is not None and rate >= D_RISING:
+            return False  # nær målet (også ved overgang fra full trøkk): holdet tar over
+        if rate is not None and rate >= D_RISING and not handover:
             return False  # rommet er allerede på vei opp (f.eks. etter full gass) — ikke start trinn
         set_t = ac.get("targetTemperature") or int(round(target))
+        if handover:
+            set_t = int(round(target + cache.get("hold_offset", 0)))  # start trinnene fra holdet, ikke fra 30
+            ac = {**ac, "fanLevel": st["fan"]}                          # og med rolig vifte, ikke høy
         new_t, fan, why = min(30, max(set_t, int(round(target))) + st["step"]), _step_fan(ac, st), f"+{st['step']}°"
         # Kjent vær: start rett på kombinasjonen som har holdt før (f.eks. 27° + høy ved −10)
         res = hl_predict(cache.get("outdoor_temp"))
