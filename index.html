@@ -536,11 +536,19 @@ input[type=time]{color-scheme:dark}
           </div>
         </div>
         <div>
-          <div class="field-label">Pumpa aldri lavere enn ønsket temp (dagtid)</div>
+          <div class="field-label">Pumpa aldri lavere enn ønsket temp (dagtid, når kaldt ute)</div>
           <div class="temp-picker">
             <button onclick="saveStaged({min_offset: (S.staged.min_offset ?? 0) - 1})">−</button>
             <div class="val" id="stagedMinOff">+0°</div>
             <button onclick="saveStaged({min_offset: (S.staged.min_offset ?? 0) + 1})">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">…gjelder når det er så kaldt ute eller kaldere</div>
+          <div class="temp-picker">
+            <button onclick="saveStaged({min_offset_below: (S.staged.min_offset_below ?? -5) - 1})">−</button>
+            <div class="val" id="stagedMinOffBelow">−5°</div>
+            <button onclick="saveStaged({min_offset_below: (S.staged.min_offset_below ?? -5) + 1})">+</button>
           </div>
         </div>
         <div>
@@ -1166,6 +1174,8 @@ function renderStaged() {
   document.getElementById("stagedFull").textContent = String(st.full_below).replace(".", ",") + "°";
   const mo = st.min_offset ?? 0;
   document.getElementById("stagedMinOff").textContent = (mo >= 0 ? "+" : "−") + Math.abs(mo) + "°";
+  const mb = st.min_offset_below ?? -5;
+  document.getElementById("stagedMinOffBelow").textContent = (mb < 0 ? "−" : "") + Math.abs(mb) + "°";
   document.getElementById("stagedExplain").textContent = st.enabled
     ? (S.stagedActive ? "⏫ Trinnvis oppvarming pågår nå. " : "")
       + `Når rommet faller 0,3° under ønsket: innstilt temp +${st.step}° med ${FAN_NO_UI[st.fan] || st.fan} vifte. Har rommet ikke steget etter ${st.every_min} min: +${st.step}° til, opp til 30°. Først da høy vifte. Er rommet ${String(st.full_below).replace(".", ",")}° eller mer under ønsket, går den rett på 30° + høy vifte.`
@@ -1180,6 +1190,7 @@ function saveStaged(change) {
   S.staged.every_min = Math.max(10, Math.min(90, S.staged.every_min));
   S.staged.full_below = Math.max(0.5, Math.min(5, S.staged.full_below));
   S.staged.min_offset = Math.max(-3, Math.min(4, S.staged.min_offset ?? 0));
+  S.staged.min_offset_below = Math.max(-25, Math.min(15, S.staged.min_offset_below ?? -5));
   S.stagedSaving = true;
   renderStaged();
   clearTimeout(_stagedSave);

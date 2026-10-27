@@ -605,7 +605,8 @@ HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
 
 # ── Trinnvis oppvarming: varmere luft først, høy vifte bare som siste utvei ──
 STAGED_DEFAULT = {"enabled": False, "step": 2, "every_min": 30, "full_below": 2.0, "fan": "medium_high",
-                  "min_offset": 0}   # pumpa aldri lavere enn ønsket + dette (23 ved ønsket 23 holder ofte ikke)
+                  "min_offset": 0,   # pumpa aldri lavere enn ønsket + dette (23 ved ønsket 23 holder ofte ikke)
+                  "min_offset_below": -5}  # …men bare når det er så kaldt ute (mildt: 24 holdt stua på 24)
 STAGED_START_BELOW = 0.3   # start trinn når rommet er så mye under ønsket
 STAGED_DONE_BELOW = 0.1    # ferdig når rommet er innen 0,1 °C av ønsket
 STAGED_RISING = 0.2        # har rommet steget så mye siden forrige trinn, venter vi (det virker)
@@ -622,9 +623,13 @@ QUICK_REACH = 15 * 60      # nås målet innen 15 min etter et trinn, var trinne
 
 def min_off():
     """Laveste påslag holdet kan gå til. Minstegrensen gjelder bare på dagtid — om natta skal
-    nattsenkingen få virke (ellers holdt «ønsket +1» stua på 23 °C med nattemål 22)."""
+    nattsenkingen få virke (ellers holdt «ønsket +1» stua på 23 °C med nattemål 22) — og bare når
+    det er kaldt ute (på en mild dag holdt «ønsket +1» stua fast på 23,9)."""
     st = get_staged()
     if not st["enabled"] or cache.get("target_mode") == "night":
+        return HOLD_OFFSET_MIN
+    out = cache.get("outdoor_temp")
+    if out is not None and out > st.get("min_offset_below", -5):
         return HOLD_OFFSET_MIN
     return max(HOLD_OFFSET_MIN, int(st.get("min_offset", 0)))
 
@@ -1707,13 +1712,14 @@ class Handler(BaseHTTPRequestHandler):
                           "every_min": max(10, min(90, int(st["every_min"]))),
                           "full_below": max(0.5, min(5.0, round(float(st["full_below"]) * 2) / 2)),
                           "fan": st["fan"] if st["fan"] in ("quiet", "low", "medium", "medium_high") else "medium_high",
-                          "min_offset": max(-3, min(4, int(st.get("min_offset", 0))))}
+                          "min_offset": max(-3, min(4, int(st.get("min_offset", 0)))),
+                          "min_offset_below": max(-25, min(15, int(st.get("min_offset_below", -5))))}
                 if new_st != get_staged():
                     cache["staged"] = new_st
                     if not new_st["enabled"]:
                         cache.pop("esc", None)
                     add_event("setting", (f"Trinnvis oppvarming: +{new_st['step']}° hvert {new_st['every_min']}. min, "
-                                          f"høy vifte sist, full trøkk når {new_st['full_below']:g}° under, aldri under ønsket {new_st['min_offset']:+d}°")
+                                          f"høy vifte sist, full trøkk når {new_st['full_below']:g}° under, aldri under ønsket {new_st['min_offset']:+d}° når ute ≤ {new_st['min_offset_below']}°")
                               if new_st["enabled"] else "Trinnvis oppvarming av")
                     cache["last_sensibo"] = 0
             if "stove" in body and isinstance(body["stove"], dict):
