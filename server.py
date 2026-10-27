@@ -650,6 +650,8 @@ D_FALL = -0.8              # °C/t = faller fort
 D_BRAKE_WITHIN = 0.5       # stiger det fort og rommet er innen 0,5 av målet: avslutt trinnene nå
 D_RISING = 0.3             # °C/t: rommet stiger allerede — ikke ta neste trinn
 D_RISE_FULL = 2.0          # full gass stiger naturlig fort — brems først over 2 °C/t
+AFTER_FULL_GRACE = 30 * 60 # etter full gass svinger rommet litt — ikke start trinn de første 30 min
+QUICK_REACH = 15 * 60      # nås målet innen 15 min etter et trinn, var trinnet for stort → hold ett hakk under
 
 def min_off():
     """Laveste påslag holdet kan gå til."""
@@ -797,6 +799,8 @@ def auto_feedback_check():
     # Trinnvis modus: huset avgir restvarme etter oppvarming — trapp ned roligere (1 t mellom hvert hakk)
     adjust_every = HOLD_ADJUST_EVERY * (2 if staged["enabled"] else 1)
     too_warm = staged["enabled"] and current > target + 1.0
+    if staged["enabled"] and current > target + 0.5:
+        adjust_every = HOLD_ADJUST_EVERY  # godt over målet: ned hver halvtime, ikke hver time
     if too_warm:
         adjust_every = HOLD_ADJUST_EVERY  # tydelig for varmt (væromslag o.l.): raskere ned
     rate = room_rate()
@@ -832,6 +836,8 @@ def auto_feedback_check():
         return
     payload = {"on": True, "mode": "heat", "targetTemperature": wanted_temp, "fanLevel": hold_fan}
     if sensibo_patch(uid, payload, f"Auto holder (rom {current:.1f}°C, mål {target:g}°C)"):
+        if _is_heating(ac):
+            cache["full_heat_ended_at"] = now  # rommet svinger litt etter full gass
         cache["ac"].update(payload)
         cache["full_heat"] = False
         cache["hold_adjusted_at"] = now
@@ -963,12 +969,15 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             set_t = ac.get("targetTemperature") or target
             hold_t = set_t
             hold_fan = ac.get("fanLevel")  # behold viften som virket (også høy, f.eks. ved −10)
-            if rate is not None and rate >= D_RISE:
-                # Mye varme på vei: hold ett hakk under (og høy vifte ned til trinn-viften)
+            quick = now - esc["last_step"] < QUICK_REACH and set_t > target + min_off()
+            if (rate is not None and rate >= D_RISE) or quick:
+                # Mye varme på vei / målet nådd raskt etter siste trinn: hold ett hakk under
                 hold_t = set_t - 1
                 if hold_fan == "high":
                     hold_fan = st["fan"]
-                add_event("auto", f"Bremser: rommet stiger {rate:.1f}°C/t ved {current:.1f}°C — holder {hold_t}°C, ikke {set_t}°C")
+                add_event("auto", (f"Bremser: rommet stiger {rate:.1f}°C/t" if rate is not None and rate >= D_RISE
+                                   else f"Nådd på {(now - esc['last_step']) / 60:.0f} min — trinnet var stort")
+                                  + f" ved {current:.1f}°C — holder {hold_t}°C, ikke {set_t}°C")
             cache["hold_offset"] = max(min_off(), min(int(30 - target), int(round(hold_t - target))))
             cache["hold_fan"] = hold_fan
             cache["full_heat"] = False
@@ -999,6 +1008,9 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         falling_fast = rate is not None and rate <= D_FALL and current < target - STAGED_DONE_BELOW
         if current >= target - STAGED_START_BELOW and not falling_fast:
             return False  # nær målet (også ved overgang fra full trøkk): holdet tar over
+        if (not handover and not falling_fast and now - cache.get("full_heat_ended_at", 0) < AFTER_FULL_GRACE
+                and current >= target - 1.0):
+            return False  # rett etter full gass: gi holdet tid før vi trapper opp
         if rate is not None and rate >= D_RISING and not handover:
             return False  # rommet er allerede på vei opp (f.eks. etter full gass) — ikke start trinn
         set_t = ac.get("targetTemperature") or int(round(target))
@@ -1395,7 +1407,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "motion_last", "present", "has_motion", "motion_cfg", "esc", "full_heat", "hl_applied_at", "morning_full", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "motion_last", "present", "has_motion", "motion_cfg", "esc", "full_heat", "hl_applied_at", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
 ]
 
 def save_state():
