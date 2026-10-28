@@ -787,6 +787,8 @@ def auto_feedback_check():
     rising_fast = staged["enabled"] and rate is not None and rate >= D_RISE and current > target + STAGED_DONE_BELOW
     if rising_fast:
         adjust_every = 15 * 60  # D: over målet og stiger fort — vent ikke en time
+    if staged["enabled"] and current > target + HOLD_HIGH and rate is not None and rate >= D_RISING:
+        adjust_every = 10 * 60  # over målet og stiger fortsatt: ett pip ekstra er bedre enn 1° for varmt
     if offset < min_off():
         cache["hold_offset"] = offset = min_off()  # aldri under «ønsket + X»
     if not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
@@ -798,7 +800,7 @@ def auto_feedback_check():
             if offset - 1 < floor and current > target + FLOOR_RELEASE_ABOVE:
                 floor = offset - 1  # tydelig for varmt: gi opp gulvet ett hakk
                 cache["hold_floor"], cache["hold_floor_at"] = floor, now
-            new = max(min_off(), floor, offset - (2 if too_warm else 1))
+            new = max(min_off(), floor, offset - (2 if too_warm or (rising_fast and current > target + HOLD_HIGH) else 1))
             if staged["enabled"] and cache.get("hold_fan") == "high":
                 # For varmt med høy vifte: senk viften først (stillere), temperaturen etterpå
                 cache["hold_fan"] = staged["fan"]
@@ -953,6 +955,12 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             if (rate is not None and rate >= D_RISE) or quick:
                 # Mye varme på vei / målet nådd raskt etter siste trinn: hold ett hakk under
                 hold_t = set_t - 1
+                if rate is not None and rate >= D_RISE:
+                    # Stiger fort: rett ned til det som holder ved denne utetemp (lært), ellers
+                    # holdet fra før trinnene — ett hakk ned ga 1° overskyting (Vigdis 28.10: 27 → 25,0°C)
+                    pred = hl_predict(cache.get("outdoor_temp"))
+                    base = int(round(pred[0])) if pred else int(cache.get("hold_offset", 0))
+                    hold_t = max(int(round(target)) + min_off(), min(hold_t, int(round(target + base))))
                 if hold_fan == "high":
                     hold_fan = st["fan"]
                 add_event("auto", (f"Bremser: rommet stiger {rate:.1f}°C/t" if rate is not None and rate >= D_RISE
