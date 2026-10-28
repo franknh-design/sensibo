@@ -662,9 +662,17 @@ input[type=time]{color-scheme:dark}
         <div class="rule-row" style="margin-top:0">
           <div>
             <div style="color:var(--text);font-size:12px">Full gass etter nattsenking</div>
-            <div style="font-size:10px;color:var(--muted)">30° + høy vifte til stua er varm igjen, så rolig styring</div>
+            <div style="font-size:10px;color:var(--muted)">30° + høy vifte til stua er varm igjen, så rolig styring. Mangler det lite, brukes trinnene</div>
           </div>
           <button class="rule-btn" id="morningFullBtn" onclick="saveNight({morning_full: !(S.night && S.night.morning_full !== false)})">PÅ</button>
+        </div>
+        <div id="morningFullRow">
+          <div class="field-label">…bare når stua er så mye under dagmålet</div>
+          <div class="temp-picker">
+            <button onclick="saveNight({morning_full_below: (S.night.morning_full_below ?? 1) - 0.5})">−</button>
+            <div class="val" id="morningFullBelow">1°</div>
+            <button onclick="saveNight({morning_full_below: (S.night.morning_full_below ?? 1) + 0.5})">+</button>
+          </div>
         </div>
         <div class="rule-row" style="margin-top:0">
           <div>
@@ -1292,6 +1300,8 @@ function renderNight() {
   pb.textContent = ph ? "PÅ" : "AV"; pb.classList.toggle("on", ph);
   const mf = n.morning_full !== false, mfb = document.getElementById("morningFullBtn");
   mfb.textContent = mf ? "PÅ" : "AV"; mfb.classList.toggle("on", mf);
+  document.getElementById("morningFullRow").style.display = mf ? "" : "none";
+  document.getElementById("morningFullBelow").textContent = String(n.morning_full_below ?? 1).replace(".", ",") + "°";
   const cs = !!n.cold_skip, csb = document.getElementById("coldSkipBtn");
   csb.textContent = cs ? "PÅ" : "AV"; csb.classList.toggle("on", cs);
   document.getElementById("coldSkipRow").style.display = cs ? "" : "none";
@@ -1311,6 +1321,7 @@ function saveNight(change) {
   if (!S.night) return;
   S.night = {...S.night, ...change};
   S.night.temp = Math.max(16, Math.min(28, S.night.temp));
+  S.night.morning_full_below = Math.max(0, Math.min(3, S.night.morning_full_below ?? 1));
   S.nightSaving = true;
   renderNight();
   // Vent til klokkeslettet er ferdig skrevet — ellers lagres halve verdier (f.eks. 00:00) underveis

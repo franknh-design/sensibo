@@ -729,6 +729,11 @@ def auto_feedback_check():
     if morning and current >= target - HEAT_STOP_BELOW:
         cache.pop("morning_full", None)  # varm nok — morgenen er ferdig, vanlig styring
         morning = False
+    elif morning and not _is_heating(ac) and current > target - get_night()["morning_full_below"]:
+        # Lite som mangler (stua sank knapt i natt): trinnene klarer det uten høy vifte
+        cache.pop("morning_full", None)
+        morning = False
+        add_event("auto", f"Ingen full gass: rommet {current:.1f}°C er under {get_night()['morning_full_below']:g}° fra målet {target:g}°C — trinnvis i stedet")
     if staged["enabled"] and not morning:
         if staged_check(uid, current, target, staged, ac, normal_fan):
             return
@@ -1040,7 +1045,8 @@ def get_outdoor_rule():
 # weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
 NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True,
                  "cold_skip": False, "cold_skip_below": -5,   # ingen nattsenking når det er kaldere enn dette ute
-                 "morning_full": True}                         # full gass (30° + høy) fra natt til dag
+                 "morning_full": True,                         # full gass (30° + høy) fra natt til dag
+                 "morning_full_below": 1.0}                    # …bare når stua er minst så mye under dagmålet
 COLD_SKIP_BAND = 1.0  # nattsenking tilbake først når det er 1 °C over grensen (hindrer flipping)
 
 def get_night():
@@ -1821,6 +1827,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "preheat": bool(n.get("preheat", True)),
                                  "cold_skip": bool(n.get("cold_skip", False)),
                                  "morning_full": bool(n.get("morning_full", True)),
+                                 "morning_full_below": max(0.0, min(3.0, round(float(n.get("morning_full_below", 1.0)) * 2) / 2)),
                                  "cold_skip_below": max(-30, min(10, round(float(n.get("cold_skip_below", -5)))))}
                 except (ValueError, AssertionError, TypeError):
                     self.send_json({"ok": False, "error": "Ugyldig klokkeslett"}); return
