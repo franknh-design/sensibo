@@ -626,7 +626,7 @@ def min_off():
     nattsenkingen få virke (ellers holdt «ønsket +1» stua på 23 °C med nattemål 22) — og bare når
     det er kaldt ute (på en mild dag holdt «ønsket +1» stua fast på 23,9)."""
     st = get_staged()
-    if not st["enabled"] or cache.get("target_mode") == "night":
+    if not st["enabled"] or cache.get("target_mode") in ("night", "away"):
         return HOLD_OFFSET_MIN
     out = cache.get("outdoor_temp")
     if out is not None and out > st.get("min_offset_below", -5):
@@ -1101,7 +1101,10 @@ def preheat_plan(day_temp, end):
 def make_standard(new_t):
     """Gjør en manuell endring av ønsket temp til ny standard for perioden som gjelder nå."""
     mode = cache.get("target_mode")
-    if mode == "night":
+    if mode == "away":
+        cache["away"] = {**get_away(), "temp": new_t}
+        add_event("setting", f"Ny temp for tomt hus: {new_t:g}°C")
+    elif mode == "night":
         cache["night"] = {**get_night(), "temp": new_t}
         add_event("setting", f"Ny standard natt: {new_t:g}°C")
     elif mode in ("warm", "cold"):
@@ -1115,6 +1118,48 @@ def make_standard(new_t):
     else:
         cache["day_target"] = new_t
         add_event("setting", f"Ny standard dag: {new_t:g}°C")
+
+# ── Tomt hus (utleie/fravær): lav temp hele døgnet, varm opp i god tid før folk kommer ──
+AWAY_DEFAULT = {"temp": 21.0, "lead_hours": 24, "periods": []}
+# periode: {"from": "YYYY-MM-DD HH:MM" (huset tomt), "to": "YYYY-MM-DD HH:MM" (folk kommer)}
+
+def get_away():
+    a = {**AWAY_DEFAULT, **(cache.get("away") or {})}
+    a["periods"] = list(a.get("periods") or [])
+    return a
+
+def _away_dt(txt):
+    return datetime.strptime(str(txt), "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
+
+def away_state(now):
+    """('away', periode) mens huset står tomt, ('warmup', periode) fra oppvarmingen starter til
+    folk kommer, ellers (None, None). Oppvarmingen starter lead_hours før ankomst."""
+    a = get_away()
+    for p in a["periods"]:
+        try:
+            start, arrive = _away_dt(p["from"]), _away_dt(p["to"])
+        except (KeyError, ValueError):
+            continue
+        warm = max(start, arrive - timedelta(hours=a["lead_hours"]))
+        if start <= now < warm:
+            return "away", p
+        if warm <= now < arrive:
+            return "warmup", p
+    return None, None
+
+def away_prune():
+    """Fjern perioder der folk har kommet for over et døgn siden."""
+    a = get_away()
+    cut = datetime.now(LOCAL_TZ) - timedelta(days=1)
+    keep = [p for p in a["periods"] if _safe_after(p.get("to"), cut)]
+    if len(keep) != len(a["periods"]):
+        cache["away"] = {**a, "periods": keep}
+
+def _safe_after(txt, cut):
+    try:
+        return _away_dt(txt) >= cut
+    except (TypeError, ValueError):
+        return False
 
 def outdoor_rule_check(force=False):
     """Bestemmer ønsket temp: nattsenking om natta, ellers mål etter utetemperatur.
@@ -1133,6 +1178,9 @@ def outdoor_rule_check(force=False):
 
     now = datetime.now(LOCAL_TZ)
     is_night, night_end = night_window(now, night) if night["enabled"] else (False, None)
+    away, away_p = away_state(now)
+    if away:
+        is_night = False   # tomt hus: ingen nattsenking; oppvarming før ankomst: heller ikke
 
     # Kaldt ute: hopp over nattsenkingen (huset bruker lang tid på å ta igjen varmen)
     skip = cache.get("night_cold_skip", False)
@@ -1153,7 +1201,7 @@ def outdoor_rule_check(force=False):
     if skip:
         is_night = False
     cache["preheat"] = None
-    if is_night and night.get("preheat", True):
+    if not away and is_night and night.get("preheat", True):
         # Har forvarmingen allerede startet for denne natta, står den (ikke tilbake til natt)
         if cache.get("preheat_for") == night_end.isoformat():
             is_night = False
@@ -1171,26 +1219,32 @@ def outdoor_rule_check(force=False):
                           else f"standard {PREHEAT_FALLBACK_MIN_PER_DEG} min/°C (ingen data ennå)"
                     add_event("auto", f"Forvarming startet: {cache.get('temperature'):.1f} → {day_temp:g}°C på ~{plan['minutes']} min "
                                       f"({src}), varmt kl. {night_end:%H:%M}")
-    mode = "night" if is_night else (bracket if rule["enabled"] else "day")
+    mode = "away" if away == "away" else ("night" if is_night else (bracket if rule["enabled"] else "day"))
     prev = cache.get("target_mode")
     if mode == prev and not force:
         return
     cache["target_mode"] = mode
-    if prev == "night" and mode != "night" and night.get("morning_full", True):
-        cache["morning_full"] = True   # varm opp etter natta på full gass (rask), så trinnvis
-    elif mode == "night":
+    if prev in ("night", "away") and mode not in ("night", "away") and (prev == "away" or night.get("morning_full", True)):
+        cache["morning_full"] = True   # varm opp etter natt/tomt hus på full gass (rask), så trinnvis
+    elif mode in ("night", "away"):
         cache.pop("morning_full", None)
 
-    if mode == "night":
+    if mode == "away":
+        if prev not in ("night", "away"):
+            cache["day_target"] = cache.get("auto_target_temp")
+        temp = get_away()["temp"]
+        why = f"Tomt hus til {_away_dt(away_p['to']):%d.%m kl. %H:%M}"
+    elif mode == "night":
         if prev != "night":
             cache["day_target"] = cache.get("auto_target_temp")  # for dag uten utetemp-regel
         temp, why = night["temp"], "Nattsenking"
     elif mode in ("warm", "cold"):
         temp = rule["warm_temp"] if mode == "warm" else rule["cold_temp"]
-        why = f"{'Dag: ' if prev == 'night' else ''}Ute {out:.1f}°C" if out is not None else "Dag"
+        why = ("Oppvarming før ankomst: " if prev == "away" else "Dag: " if prev == "night" else "") \
+              + (f"Ute {out:.1f}°C" if out is not None else "Dag")
     else:  # dag uten utetemp-regel: tilbake til det som gjaldt før natta
-        temp, why = cache.get("day_target") or cache.get("auto_target_temp"), "Dag"
-        if prev != "night":
+        temp, why = cache.get("day_target") or cache.get("auto_target_temp"), ("Oppvarming før ankomst" if prev == "away" else "Dag")
+        if prev not in ("night", "away"):
             save_state()
             return
     if temp is not None and cache.get("auto_target_temp") != temp:
@@ -1232,7 +1286,7 @@ def schedule_check():
     """Setter ønsket temp når et nytt timeplan-punkt passeres — én gang per punkt,
     så manuelle endringer i appen står seg til neste punkt."""
     ev = latest_schedule_event(datetime.now(LOCAL_TZ))
-    if ev is None:
+    if ev is None or cache.get("target_mode") == "away":
         return
     at, temp = ev
     key = at.isoformat()
@@ -1309,6 +1363,7 @@ def hourly_status():
     if hour.endswith("T03"):
         try:
             init_series()  # nattlig opprydding: behold 35 dager
+            away_prune()
         except Exception as e:
             log.error(f"Tidsserie-opprydding: {e}")
     room, out, ac = cache.get("temperature"), cache.get("outdoor_temp"), cache.get("ac", {})
@@ -1378,7 +1433,7 @@ def load_history():
 STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
-    "night", "target_mode", "day_target", "preheat_for",
+    "night", "target_mode", "day_target", "preheat_for", "away",
     "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
 ]
 
@@ -1606,6 +1661,8 @@ class Handler(BaseHTTPRequestHandler):
                 "hold_fan": cache.get("hold_fan"),
                 "stove_active": bool(cache.get("stove_active")),
                 "target_mode": cache.get("target_mode"),
+                "away": get_away(),
+                "away_now": (lambda st: {"state": st[0], **st[1]} if st[0] else None)(away_state(datetime.now(LOCAL_TZ))),
                 "events": recent_events(hours=48, limit=500),
                 "room_name": ROOM_NAME,
                 "room_id": ROOM_ID,
@@ -1666,6 +1723,28 @@ class Handler(BaseHTTPRequestHandler):
                 cache["schedules"] = body["schedules"]
                 log.info(f"Timeplan oppdatert: {len(cache['schedules'])} tidspunkter")
                 add_event("setting", f"Timeplan endret ({len(cache['schedules'])} tidspunkter)")
+            if "away" in body and isinstance(body["away"], dict):
+                a = {**get_away(), **body["away"]}
+                periods = []
+                for p in a.get("periods") or []:
+                    try:
+                        f, t = _away_dt(p["from"]), _away_dt(p["to"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if t > f:
+                        periods.append({"from": f"{f:%Y-%m-%d %H:%M}", "to": f"{t:%Y-%m-%d %H:%M}"})
+                periods.sort(key=lambda p: p["from"])
+                new_a = {"temp": max(16, min(25, round(float(a["temp"])))),
+                         "lead_hours": max(0, min(72, int(a["lead_hours"]))), "periods": periods}
+                old_a = get_away()
+                if new_a != old_a:
+                    cache["away"] = new_a
+                    if new_a["periods"] != old_a["periods"]:
+                        add_event("setting", "Tomt hus: " + (", ".join(f"{_away_dt(p['from']):%d.%m %H:%M}–{_away_dt(p['to']):%d.%m %H:%M}" for p in periods) or "ingen perioder"))
+                    if (new_a["temp"], new_a["lead_hours"]) != (old_a["temp"], old_a["lead_hours"]):
+                        add_event("setting", f"Tomt hus: {new_a['temp']:g}°C, varm opp {new_a['lead_hours']} t før ankomst")
+                    outdoor_rule_check(force=True)
+                    cache["last_sensibo"] = 0
             if "outdoor_rule" in body and isinstance(body["outdoor_rule"], dict):
                 r = {**get_outdoor_rule(), **body["outdoor_rule"]}
                 warm_from = max(-25, min(20, float(r["warm_from"])))

@@ -423,8 +423,50 @@ input[type=time]{color-scheme:dark}
 <!-- TIMEPLAN side -->
 <div class="page" id="page-timeplan" style="display:none;padding:0 0 100px">
   <div class="header">
-    <div><div class="header-title">Timeplan</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Ukentlig temperaturplan</div></div>
+    <div><div class="header-title">Timeplan</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Tomt hus og ukentlig plan</div></div>
   </div>
+  <div style="padding:0 24px 18px">
+    <div id="awayCard" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Tomt hus / utleie</div>
+      <div style="padding:18px;display:grid;gap:14px">
+        <div style="font-size:11px;line-height:1.6" id="awayNow"></div>
+        <div class="field-row">
+          <div>
+            <div class="field-label">Temp når huset står tomt</div>
+            <div class="temp-picker">
+              <button onclick="saveAway({temp: S.away.temp - 1})">−</button>
+              <div class="val" id="awayTemp">21°</div>
+              <button onclick="saveAway({temp: S.away.temp + 1})">+</button>
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Varm opp før folk kommer</div>
+            <div class="temp-picker">
+              <button onclick="saveAway({lead_hours: S.away.lead_hours - 6})">−</button>
+              <div class="val" id="awayLead">24 t</div>
+              <button onclick="saveAway({lead_hours: S.away.lead_hours + 6})">+</button>
+            </div>
+          </div>
+        </div>
+        <div id="awayList" style="display:grid;gap:8px"></div>
+        <div class="add-box">
+          <div class="field-row">
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Tomt fra</div>
+              <input type="datetime-local" class="time-input" id="away-from">
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Folk kommer</div>
+              <input type="datetime-local" class="time-input" id="away-to">
+            </div>
+          </div>
+          <button class="send-btn" style="width:100%;padding:12px" onclick="addAwayPeriod()">+ Legg til periode</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6" id="awayExplain"></div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:0 24px 10px;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)">Ukentlig timeplan</div>
   <div style="padding:0 24px;display:grid;gap:10px" id="timeplanList"></div>
   <div style="padding:20px 24px 0">
     <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px">Legg til nytt tidspunkt</div>
@@ -1025,6 +1067,7 @@ function applyStatus(d) {
     if (d.hold_learn) { S.holdLearn = d.hold_learn; S.holdLearnNow = d.hold_learn_now; S.outdoorNow = d.outdoor_temp; renderHoldLearn(); }
     if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
     if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
+    if (d.away && !S.awaySaving) { S.away = d.away; S.awayNow = d.away_now; renderAway(); }
     if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; S.nightColdSkip = d.night_cold_skip; renderNight(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
@@ -1292,6 +1335,10 @@ function updateAutoToggleUI() {
   if (S.autoEnabled && S.stoveActive) {
     title.textContent = "🔥 Vedovnen fyrer";
     sub.textContent = `Pumpa er av · pumpa slås på igjen under ${S.stove?.on_below ?? 25}°`;
+  } else if (S.autoEnabled && S.awayNow) {
+    const til = fmtAwayDt(S.awayNow.to);
+    title.textContent = S.awayNow.state === "away" ? "🏠 Tomt hus" : "🏠 Varmer opp før ankomst";
+    sub.textContent = `mål ${S.targetTemp}°C · pumpe ${S.acTemp}°C · folk kommer ${til}`;
   } else if (S.autoEnabled && S.pausedUntil) {
     const til = new Date(S.pausedUntil*1000).toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
     title.textContent = "⏸ Auto pauset";
@@ -1721,7 +1768,7 @@ function showPage(name, btn) {
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
   // Oppdater innhold
-  if (name==="timeplan") renderTimeplanPage();
+  if (name==="timeplan") { renderTimeplanPage(); renderAway(); }
   if (name==="learn") renderLearnPage();
   if (name==="settings") renderSettingsPage();
   if (name==="graf") loadGraf();
@@ -1742,6 +1789,63 @@ function buildTpDayGrid() {
     };
     grid.appendChild(btn);
   });
+}
+
+// ── Tomt hus / utleie ──
+const _p2 = n => String(n).padStart(2, "0");
+function fmtAwayDt(txt) {
+  const [d, t] = String(txt).split(" "); const [y, m, dd] = d.split("-");
+  const wd = ["søn","man","tir","ons","tor","fre","lør"][new Date(+y, m - 1, +dd).getDay()];
+  return `${wd} ${+dd}.${+m} kl. ${t}`;
+}
+function renderAway() {
+  const a = S.away; if (!a || !document.getElementById("awayTemp")) return;
+  document.getElementById("awayTemp").textContent = a.temp + "°";
+  document.getElementById("awayLead").textContent = a.lead_hours + " t";
+  const now = S.awayNow, el = document.getElementById("awayNow");
+  el.innerHTML = now
+    ? `<span style="color:var(--accent)">${now.state === "away" ? `🏠 Huset står tomt nå — holder ${a.temp}°.` : "🏠 Varmer opp til vanlig temp før ankomst."}</span> Folk kommer ${fmtAwayDt(now.to)}.`
+    : `<span style="color:var(--muted)">Vanlig drift nå.</span>`;
+  const list = document.getElementById("awayList");
+  list.innerHTML = a.periods.length ? a.periods.map((p, i) => `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div style="font-size:12px;line-height:1.6">
+        <div>Tomt fra <span style="color:var(--accent)">${fmtAwayDt(p.from)}</span></div>
+        <div>Folk kommer <span style="color:var(--accent)">${fmtAwayDt(p.to)}</span></div>
+      </div>
+      <button onclick="removeAwayPeriod(${i})" style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.2);border-radius:8px;padding:8px 14px;color:var(--danger);font-family:var(--mono);font-size:11px;cursor:pointer">Slett</button>
+    </div>`).join("")
+    : '<div style="font-size:11px;color:var(--muted)">Ingen perioder lagt inn.</div>';
+  document.getElementById("awayExplain").textContent =
+    `Mens huset står tomt holdes ${a.temp}° hele døgnet (ingen nattsenking). ${a.lead_hours} timer før folk kommer starter oppvarmingen på full gass mot vanlig temp, og nattsenkingen hoppes over til de er kommet. Utløpte perioder fjernes av seg selv.`;
+  const f = document.getElementById("away-from"), t = document.getElementById("away-to");
+  if (!f.value) { const d = new Date(); d.setDate(d.getDate() + 1); f.value = `${d.getFullYear()}-${_p2(d.getMonth()+1)}-${_p2(d.getDate())}T12:00`; }
+  if (!t.value) { const d = new Date(); d.setDate(d.getDate() + 8); t.value = `${d.getFullYear()}-${_p2(d.getMonth()+1)}-${_p2(d.getDate())}T15:00`; }
+}
+let _awaySave = null;
+function saveAway(change, now) {
+  if (!S.away) return;
+  S.away = {...S.away, ...change};
+  S.away.temp = Math.max(16, Math.min(25, S.away.temp));
+  S.away.lead_hours = Math.max(0, Math.min(72, S.away.lead_hours));
+  S.awaySaving = true;
+  renderAway();
+  clearTimeout(_awaySave);
+  _awaySave = setTimeout(() => {
+    fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({away: S.away})})
+      .then(r => r.json()).then(d => { S.awaySaving = false; showToast(d.ok ? "Lagret ✓" : "Kunne ikke lagre", d.ok ? "ok" : "err"); setTimeout(fetchStatus, 800); })
+      .catch(() => { S.awaySaving = false; showToast("Kunne ikke lagre","err"); });
+  }, now ? 0 : 700);
+}
+function addAwayPeriod() {
+  const f = document.getElementById("away-from").value, t = document.getElementById("away-to").value;
+  if (!f || !t) { showToast("Fyll inn begge tidspunktene","err"); return; }
+  if (t <= f) { showToast("«Folk kommer» må være etter «Tomt fra»","err"); return; }
+  const p = {from: f.replace("T", " "), to: t.replace("T", " ")};
+  saveAway({periods: [...S.away.periods, p].sort((a, b) => a.from.localeCompare(b.from))}, true);
+}
+function removeAwayPeriod(i) {
+  saveAway({periods: S.away.periods.filter((_, j) => j !== i)}, true);
 }
 
 function renderTimeplanPage() {
