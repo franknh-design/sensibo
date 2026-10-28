@@ -108,6 +108,8 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .time-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none;transition:border-color 0.2s}
 .time-input:focus{border-color:var(--accent)}
+.date-pick{color-scheme:dark;cursor:pointer}
+.date-pick::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.8}
 
 /* Day selector */
 .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
@@ -453,11 +455,11 @@ input[type=time]{color-scheme:dark}
           <div class="field-row">
             <div>
               <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Tomt fra</div>
-              <input type="datetime-local" class="time-input" id="away-from">
+              <input type="datetime-local" class="time-input date-pick" id="away-from" onclick="try{this.showPicker()}catch(e){}">
             </div>
             <div>
               <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Folk kommer</div>
-              <input type="datetime-local" class="time-input" id="away-to">
+              <input type="datetime-local" class="time-input date-pick" id="away-to" onclick="try{this.showPicker()}catch(e){}">
             </div>
           </div>
           <button class="send-btn" style="width:100%;padding:12px" onclick="addAwayPeriod()">+ Legg til periode</button>
