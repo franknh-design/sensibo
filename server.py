@@ -903,16 +903,23 @@ def hold_learning(current, target, offset, heating, fan):
     if res is None or now - cache.get("hl_applied_at", 0) < HL_APPLY_EVERY:
         return None
     pred, lfan = res
+    # Bare når været skifter (nytt utetemp-trinn): ellers kjempet læringen mot nedtrappingen
+    # (Frank 29.10 natt: 22→24→22→24→22 uten at været endret seg). Holdregulatoren tar finjusteringen.
+    bucket = hl_bucket(out)
+    if "hl_applied_bucket" not in cache:
+        cache["hl_applied_bucket"] = bucket  # første gang: dagens vær er utgangspunktet, ikke et skifte
+    if cache.get("hl_applied_bucket") == bucket:
+        return None
     want = max(min_off(), min(int(30 - target), int(round(pred))))
     fan_change = bool(lfan) and lfan != fan and (lfan == "high" or fan == "high")
     if (want == offset or abs(pred - offset) < 0.75) and not fan_change:
         return None
     # Ta hensyn til innetemp nå: ikke skru opp i et varmt rom, ikke ned i et kaldt
-    if want > offset and current > target + HL_STABLE_BAND:
-        return None
+    if want > offset and current >= target - STAGED_DONE_BELOW:
+        return None  # aldri opp når rommet allerede er på eller over målet
     if want < offset and current < target - HL_STABLE_BAND:
         return None
-    cache["hl_applied_at"] = now
+    cache["hl_applied_at"], cache["hl_applied_bucket"] = now, bucket
     cache["hold_floor"], cache["hold_floor_at"] = want, now  # ikke trapp ned forbi det som har holdt ved denne utetemp
     add_event("auto", f"Lært: ved {out:.0f}°C ute holder pumpa ønsket temp på ca. {target + want:g}°C"
                       f"{' · ' + FAN_NO.get(lfan, lfan) + ' vifte' if lfan else ''} — justerer fra {target + offset:g}°C")
@@ -960,7 +967,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
                     # holdet fra før trinnene — ett hakk ned ga 1° overskyting (Vigdis 28.10: 27 → 25,0°C)
                     pred = hl_predict(cache.get("outdoor_temp"))
                     base = int(round(pred[0])) if pred else int(cache.get("hold_offset", 0))
-                    hold_t = max(int(round(target)) + min_off(), min(hold_t, int(round(target + base))))
+                    # Ett hakk over lært hold når vi er like under målet — ellers sank rommet og trinnene startet igjen
+                    hold_t = max(int(round(target)) + min_off(), min(hold_t, int(round(target + base)) + (1 if current < target else 0)))
                 if hold_fan == "high":
                     hold_fan = st["fan"]
                 add_event("auto", (f"Bremser: rommet stiger {rate:.1f}°C/t" if rate is not None and rate >= D_RISE
@@ -1448,7 +1456,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for", "away",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "hl_applied_bucket", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
 ]
 
 def save_state():
