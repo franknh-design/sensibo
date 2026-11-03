@@ -1161,7 +1161,7 @@ def make_standard(new_t):
         add_event("setting", f"Ny standard dag: {new_t:g}°C")
 
 # ── Tomt hus (utleie/fravær): lav temp hele døgnet, varm opp i god tid før folk kommer ──
-AWAY_DEFAULT = {"temp": 21.0, "lead_hours": 24, "periods": []}
+AWAY_DEFAULT = {"temp": 21.0, "lead_hours": 7, "periods": []}  # innsjekk normalt etter kl. 15 → varme fra kl. 08
 # periode: {"from": "YYYY-MM-DD HH:MM" (huset tomt), "to": "YYYY-MM-DD HH:MM" (folk kommer)}
 
 def get_away():
@@ -1291,6 +1291,15 @@ def outdoor_rule_check(force=False):
             save_state()
             return
     if temp is not None and cache.get("auto_target_temp") != temp:
+        old_t = cache.get("auto_target_temp")
+        if old_t is not None and temp < old_t:
+            # Lavere mål (natt/tomt hus): trinnene og påslaget hørte til det gamle målet — ellers ble
+            # 30° fra oppvarmingen til 28° ved mål 21 (Vigdis 03.11)
+            cache.pop("esc", None)
+            pred = hl_predict(cache.get("outdoor_temp"))  # target_mode er allerede satt → riktig tabell
+            cap = int(round(pred[0])) if pred else 1
+            cache["hold_offset"] = max(HOLD_OFFSET_MIN, min(cache.get("hold_offset", 0), cap))
+            cache["hold_fan"] = None
         cache["auto_target_temp"] = temp
         add_event("setting", f"{why} → ønsket temp {temp:g}°C")
         cache["last_sensibo"] = 0
