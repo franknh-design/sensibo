@@ -845,11 +845,15 @@ HL_MAX_REACH = 3          # uten måling på begge sider: bruk bare lært verdi 
 def hl_bucket(out):
     return int(round(out / HL_BUCKET) * HL_BUCKET)
 
+def hl_key():
+    """Egen tabell for tomt hus: lavt mål uten folk taper mindre varme enn vanlig drift."""
+    return "hold_learn_away" if cache.get("target_mode") == "away" else "hold_learn"
+
 def hl_record(out, offset, kind, fan=None):
     """kind «stable»: denne kombinasjonen (temp + vifte) holdt. «fail»: den holdt ikke — trenger minst ett hakk mer."""
-    if out is None or cache.get("target_mode") == "away":
-        return  # tomt hus (lavt mål, ingen folk) sier lite om hva som holder vanlig temp
-    hl = cache.setdefault("hold_learn", {})
+    if out is None:
+        return
+    hl = cache.setdefault(hl_key(), {})
     b = str(hl_bucket(out))
     e = hl.get(b)
     e = dict(e or {})
@@ -868,7 +872,7 @@ def hl_record(out, offset, kind, fan=None):
 
 def hl_predict(out):
     """Lært påslag ved denne utetemp (lineært mellom nærmeste trinn med data). None uten data."""
-    hl = cache.get("hold_learn") or {}
+    hl = cache.get(hl_key()) or {}
     if out is None or not hl:
         return None
     pts = sorted((int(k), e["v"], e.get("fan")) for k, e in hl.items() if e.get("v") is not None)
@@ -1261,6 +1265,8 @@ def outdoor_rule_check(force=False):
     if mode == prev and not force:
         return
     cache["target_mode"] = mode
+    if (prev == "away") != (mode == "away"):
+        cache["hl_applied_bucket"] = None  # byttet tabell (tomt hus ↔ vanlig): lært verdi kan brukes med en gang
     if prev in ("night", "away") and mode not in ("night", "away") and (prev == "away" or night.get("morning_full", True)):
         cache["morning_full"] = True   # varm opp etter natt/tomt hus på full gass (rask), så trinnvis
     elif mode in ("night", "away"):
@@ -1471,7 +1477,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for", "away",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_fan", "esc", "full_heat", "hl_applied_at", "hl_applied_bucket", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_learn_away", "hold_fan", "esc", "full_heat", "hl_applied_at", "hl_applied_bucket", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1694,6 +1700,7 @@ class Handler(BaseHTTPRequestHandler):
                 "staged": get_staged(),
                 "staged_active": bool(cache.get("esc")),
                 "hold_learn": cache.get("hold_learn") or {},
+                "hold_learn_away": cache.get("hold_learn_away") or {},
                 "hold_learn_now": (lambda p: None if p is None else {"offset": round(p[0], 1), "fan": p[1]})(hl_predict(cache.get("outdoor_temp"))),
                 "hold_fan": cache.get("hold_fan"),
                 "stove_active": bool(cache.get("stove_active")),
