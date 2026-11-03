@@ -448,6 +448,15 @@ def record_room_temp(t):
     while hist and now - hist[0][0] > ROOM_HIST_SECONDS:
         hist.pop(0)
 
+def room_avg(minutes=6):
+    """Snitt av romtemp siste minutter — én måling som vipper 0,1 skal ikke starte/avslutte trinn."""
+    hist = cache.get("room_hist") or []
+    if not hist:
+        return cache.get("temperature")
+    now = hist[-1][0]
+    vals = [v for t, v in hist if now - t <= minutes * 60]
+    return sum(vals) / len(vals)
+
 def room_rate():
     """°C per time over siste ~15 min (minst 10 min data), ellers None."""
     hist = cache.get("room_hist") or []
@@ -838,8 +847,8 @@ def hl_bucket(out):
 
 def hl_record(out, offset, kind, fan=None):
     """kind «stable»: denne kombinasjonen (temp + vifte) holdt. «fail»: den holdt ikke — trenger minst ett hakk mer."""
-    if out is None:
-        return
+    if out is None or cache.get("target_mode") == "away":
+        return  # tomt hus (lavt mål, ingen folk) sier lite om hva som holder vanlig temp
     hl = cache.setdefault("hold_learn", {})
     b = str(hl_bucket(out))
     e = hl.get(b)
@@ -949,9 +958,11 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         return False  # langt under / morgen på full gass: la den gjøre seg ferdig
 
     rate = room_rate()
+    avg = room_avg()
     if esc:
         braking = rate is not None and rate >= D_RISE and current >= target - D_BRAKE_WITHIN
-        if current >= target - STAGED_DONE_BELOW or braking:
+        # Nådd = målet er nådd (og snittet er like ved) — ikke at én måling vippet fra 22,8 til 22,9
+        if (current >= target and avg >= target - STAGED_DONE_BELOW) or braking:
             # Nådd: hold på innstillingen som virket (pumpa kan trenge f.eks. 27° for å holde 23°).
             # Den trappes ned bare når rommet blir for varmt (holdregulatoren, −1 per halvtime).
             cache.pop("esc", None)
@@ -960,20 +971,27 @@ def staged_check(uid, current, target, st, ac, normal_fan):
             hold_fan = ac.get("fanLevel")  # behold viften som virket (også høy, f.eks. ved −10)
             quick = now - esc["last_step"] < QUICK_REACH and set_t > target + min_off()
             if (rate is not None and rate >= D_RISE) or quick:
-                # Mye varme på vei / målet nådd raskt etter siste trinn: hold ett hakk under
-                hold_t = set_t - 1
+                # Mye varme på vei / målet nådd raskt etter siste trinn: tilbake til det pumpa sto på før
+                # siste trinn (ikke trinn −1 — det ga en trapp 24→25→26→27, Frank 02.11)
+                hold_t = min(set_t - 1, int(esc.get("prev_t", set_t - 1)))
                 if rate is not None and rate >= D_RISE:
                     # Stiger fort: rett ned til det som holder ved denne utetemp (lært), ellers
                     # holdet fra før trinnene — ett hakk ned ga 1° overskyting (Vigdis 28.10: 27 → 25,0°C)
                     pred = hl_predict(cache.get("outdoor_temp"))
                     base = int(round(pred[0])) if pred else int(cache.get("hold_offset", 0))
                     # Ett hakk over lært hold når vi er like under målet — ellers sank rommet og trinnene startet igjen
-                    hold_t = max(int(round(target)) + min_off(), min(hold_t, int(round(target + base)) + (1 if current < target else 0)))
+                    hold_t = max(int(round(target)) + min_off(), min(set_t - 1, int(round(target + base)) + (1 if current < target else 0)))
                 if hold_fan == "high":
                     hold_fan = st["fan"]
                 add_event("auto", (f"Bremser: rommet stiger {rate:.1f}°C/t" if rate is not None and rate >= D_RISE
                                    else f"Nådd på {(now - esc['last_step']) / 60:.0f} min — trinnet var stort")
                                   + f" ved {current:.1f}°C — holder {hold_t}°C, ikke {set_t}°C")
+            if esc.get("fail_offset") is not None and not quick and now - esc["start"] >= st["every_min"] * 60:
+                # Ekte svikt: holdet før trinnene var ikke nok, og det tok en stund å ta igjen
+                hl_record(cache.get("outdoor_temp"), esc["fail_offset"], "fail")
+                floor = esc["fail_offset"] + 1
+                if floor > current_floor():
+                    cache["hold_floor"], cache["hold_floor_at"] = floor, now
             cache["hold_offset"] = max(min_off(), min(int(30 - target), int(round(hold_t - target))))
             cache["hold_fan"] = hold_fan
             cache["full_heat"] = False
@@ -1001,8 +1019,9 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         else:
             return True  # alt er maks — vent
     else:
-        falling_fast = rate is not None and rate <= D_FALL and current < target - STAGED_DONE_BELOW
-        if current >= target - STAGED_START_BELOW and not falling_fast:
+        # Snitt, ikke én måling: 22,8 i ett øyeblikk ved mål 23 startet trinn (støy)
+        falling_fast = rate is not None and rate <= D_FALL and avg < target - 0.2
+        if avg >= target - STAGED_START_BELOW and not falling_fast:
             return False  # nær målet (også ved overgang fra full trøkk): holdet tar over
         if (not handover and not falling_fast and now - cache.get("full_heat_ended_at", 0) < AFTER_FULL_GRACE
                 and current >= target - 1.0):
@@ -1026,12 +1045,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         # Bare ved ekte svikt: rommet lå rundt SAMME ønskede temp nylig (ikke morgenhopp, ikke trinn på vei opp)
         real_fail = (ac.get("on") and set_t < 30 and cache.get("hl_in_band_target") == target
                      and now - cache.get("hl_in_band_at", 0) < HL_STABLE_SECONDS)
-        if real_fail:
-            hl_record(cache.get("outdoor_temp"), int(set_t - target), "fail")
-            floor = int(set_t - target) + 1
-            if floor > current_floor():
-                cache["hold_floor"], cache["hold_floor_at"] = floor, now
-        esc = {"start": now, "last_step": now, "room_at_step": current}
+        esc = {"start": now, "last_step": now, "room_at_step": current,
+               "fail_offset": int(set_t - target) if real_fail else None}  # vurderes når trinnene er ferdige
         cache["esc"] = esc
         cache["auto_heat_start"] = {"temp": current, "time": now, "outdoor": cache.get("outdoor_temp")}
 
@@ -1039,7 +1054,7 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     if sensibo_patch(uid, payload, f"Trinnvis oppvarming {why} (rom {current:.1f}°C, mål {target:g}°C)"):
         cache["ac"].update(payload)
         cache["full_heat"] = False
-    esc.update(last_step=now, room_at_step=current)
+    esc.update(last_step=now, room_at_step=current, prev_t=int(set_t))
     save_state()  # trinnene overlever omstart
     return True
 
