@@ -57,6 +57,13 @@ METNO_PLACE, METNO_LAT, METNO_LON = _outdoor["place"], _outdoor["lat"], _outdoor
 HA_URL = os.getenv("HA_URL", "").rstrip("/")
 HA_TOKEN = os.getenv("HA_TOKEN", "")
 HA_OUTDOOR_ENTITY = os.getenv("HA_OUTDOOR_ENTITY", "") if _outdoor["ha_sensor"] else ""
+# Kinomodus: når TV-en/mediaspilleren begynner å spille, slås vinduslys og lyset bak sofaen av.
+# Bare hos Frank (låst på samme måte som Hue-sensoren), så en kopiert .env ikke styrer feil hus.
+HA_MOVIE_PLAYER = os.getenv("HA_MOVIE_PLAYER", "") if _outdoor["ha_sensor"] else ""
+HA_MOVIE_LIGHTS = [e.strip() for e in os.getenv("HA_MOVIE_LIGHTS", "").split(",") if e.strip()] if _outdoor["ha_sensor"] else []
+HA_MOVIE_RESTORE = os.getenv("HA_MOVIE_RESTORE", "1") == "1"  # skru lysene på igjen når filmen er ferdig
+MOVIE_POLL_SECONDS = 5
+MOVIE_RESTORE_AFTER = 120      # spilleren må ha stått stoppet så lenge før lyset kommer tilbake (pause teller ikke)
 SENSOR_MAX_AGE = 3 * 3600      # sensoren regnes som død hvis den ikke har rapportert på 3 t
 SENSOR_POLL_EVERY = 5 * 60
 SENSOR_GRACE = 30 * 60         # HA faller ut korte perioder — behold siste gode verdi så lenge
@@ -538,6 +545,72 @@ def resolve_outdoor():
                   else f"Ingen svar fra Home Assistant på {SENSOR_GRACE // 60} min — bruker met.no inntil videre")
 
 
+
+# ============================================================
+# KINOMODUS — lys av når vi ser film (via Home Assistant)
+# ============================================================
+def ha_state(entity):
+    r = requests.get(f"{HA_URL}/api/states/{entity}",
+                     headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=5)
+    r.raise_for_status()
+    return r.json()
+
+def ha_service(domain, service, entity_ids):
+    r = requests.post(f"{HA_URL}/api/services/{domain}/{service}",
+                      headers={"Authorization": f"Bearer {HA_TOKEN}"},
+                      json={"entity_id": entity_ids}, timeout=10)
+    r.raise_for_status()
+
+def movie_check():
+    """Spilleren går over til «playing» → slå av lysene som er på og husk hvilke.
+    Stoppet (ikke bare pause) i MOVIE_RESTORE_AFTER sek → slå de samme lysene på igjen."""
+    st = ha_state(HA_MOVIE_PLAYER).get("state")
+    prev = cache.get("movie_player_state")
+    cache["movie_player_state"] = st
+    if st == "playing":
+        cache.pop("movie_stopped_at", None)
+        if prev in (None, "playing"):
+            return  # bare ved overgang til avspilling, så vi ikke slåss med lys som skrus på manuelt under filmen
+        if cache.get("movie_lights_off"):
+            return  # fortsetter etter pause — lysene er allerede av
+        on = []
+        for e in HA_MOVIE_LIGHTS:
+            try:
+                if ha_state(e).get("state") == "on":
+                    on.append(e)
+            except Exception:
+                pass
+        cache["movie_lights_off"] = on or [None]  # markerer at kinomodus er aktiv selv om alt allerede var av
+        if on:
+            for e in on:
+                ha_service(e.split(".")[0], "turn_off", e)
+            add_event("setting", f"Film startet — slo av {len(on)} lys")
+            log.info(f"Kinomodus: slo av {', '.join(on)}")
+        return
+    if st == "paused" or not cache.get("movie_lights_off"):
+        return
+    since = cache.setdefault("movie_stopped_at", time.time())
+    if time.time() - since < MOVIE_RESTORE_AFTER:
+        return
+    restore = [e for e in cache.pop("movie_lights_off") if e]
+    cache.pop("movie_stopped_at", None)
+    if HA_MOVIE_RESTORE and restore:
+        for e in restore:
+            ha_service(e.split(".")[0], "turn_on", e)
+        add_event("setting", f"Filmen er ferdig — slo på {len(restore)} lys igjen")
+        log.info(f"Kinomodus: slo på {', '.join(restore)}")
+
+def movie_loop():
+    fails = 0
+    while True:
+        try:
+            movie_check()
+            fails = 0
+        except Exception as e:
+            fails += 1
+            if fails in (1, 60):  # ikke fyll loggen når HA er nede
+                log.warning(f"Kinomodus: HA utilgjengelig ({getattr(getattr(e, 'response', None), 'status_code', type(e).__name__)})")
+        time.sleep(MOVIE_POLL_SECONDS)
 
 # ============================================================
 # AUTO FEEDBACK LOOP
@@ -2024,6 +2097,10 @@ if __name__ == "__main__":
     # Bakgrunns-loop
     t = threading.Thread(target=background_loop, daemon=True)
     t.start()
+
+    if HA_URL and HA_TOKEN and HA_MOVIE_PLAYER and HA_MOVIE_LIGHTS:
+        threading.Thread(target=movie_loop, daemon=True).start()
+        log.info(f"Kinomodus: {HA_MOVIE_PLAYER} styrer {', '.join(HA_MOVIE_LIGHTS)}")
 
     # Start web server
     server = HTTPServer((SERVER_HOST, SERVER_PORT), Handler)
