@@ -36,17 +36,10 @@ Hetzner CPX22 (Helsinki)
 - Planlagte temperaturendringer per klokkeslett og ukedag
 - Lagres på serveren — gjelder alle enheter
 
-### Kinomodus (lys av når vi ser film)
-- Følger en mediaspiller i Home Assistant (f.eks. TV-en eller Apple TV)
-- Når den begynner å spille, slås de valgte lysene (vinduslys, lyset bak sofaen) av
-- Pause lar lyset være av; når avspillingen har stått stoppet i 2 min, slås de samme lysene på igjen
-- Settes opp i `.env` (bare Franks stue):
-  ```
-  HA_MOVIE_PLAYER=media_player.stue_tv
-  HA_MOVIE_LIGHTS=light.vinduslys,light.lys_bak_sofa
-  HA_MOVIE_RESTORE=1   # 0 = ikke slå lyset på igjen etterpå
-  ```
-  Entity-ID-ene finnes i Home Assistant under Innstillinger → Enheter og tjenester → Entiteter.
+### Kinomodus (lys av når vi ser film) — Home Assistant
+- Ligger som HA-automasjon i `ha/kinomodus.yaml`, ikke i server.py
+- TV-en begynner å spille → vinduslys og lyset bak sofaen av (de som var på huskes)
+- Pause lar lyset være av; stoppet i 2 min → de samme lysene på igjen
 
 ### PWA
 - Fungerer som app på iPhone (Legg til på hjemskjerm)
