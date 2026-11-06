@@ -1,19 +1,24 @@
-# Kinomodus — vinduslys og lyset bak sofaen av når TV-en spiller, på igjen når den stopper.
+# Kinomodus — vinduslys og lyset bak sofaen av når TV-en spiller, på igjen når filmen slås av.
 # Lim inn i Home Assistant: Innstillinger → Automasjoner → Opprett → ⋮ → Rediger i YAML.
 # Bytt ut entity-ID-ene under (finnes i Innstillinger → Enheter og tjenester → Entiteter).
 alias: Kinomodus
-description: Lys av når vi ser film, på igjen når filmen er ferdig
+description: Lys av når vi ser film, på igjen når filmen slås av
 mode: queued
 triggers:
   - trigger: state
     entity_id: media_player.stue_tv          # ← TV-en / Apple TV
     to: playing
-    not_from: paused                          # fortsetter etter pause — lyset er allerede av
     id: start
   - trigger: state
     entity_id: media_player.stue_tv          # ← samme som over
-    to: [idle, "off", standby]
-    for: "00:02:00"                           # stoppet i 2 min (pause teller ikke)
+    from: [playing, paused]
+    to: "off"                                 # TV-en slått av → lyset på med en gang
+    id: stopp
+  - trigger: state
+    entity_id: media_player.stue_tv          # ← samme som over
+    from: [playing, paused]
+    to: [idle, standby]
+    for: "00:02:00"                           # filmen ferdig, TV-en står på menyen i 2 min (pause teller ikke)
     id: stopp
 actions:
   - choose:
@@ -21,27 +26,15 @@ actions:
           - condition: trigger
             id: start
         sequence:
-          # Husk hvilke lys som var på, så bare de slås på igjen etterpå
-          - action: scene.create
-            data:
-              scene_id: kinomodus_for
-              snapshot_entities:
-                - light.vinduslys             # ← vinduslys
-                - light.lys_bak_sofa          # ← lyset bak sofaen
           - action: light.turn_off
             target:
-              entity_id:
-                - light.vinduslys
-                - light.lys_bak_sofa
+              entity_id: &lys
+                - light.vinduslys             # ← vinduslys
+                - light.lys_bak_sofa          # ← lyset bak sofaen
       - conditions:
           - condition: trigger
             id: stopp
-          - condition: template
-            value_template: "{{ states('scene.kinomodus_for') not in ['unknown', 'unavailable'] }}"
         sequence:
-          - action: scene.turn_on
+          - action: light.turn_on
             target:
-              entity_id: scene.kinomodus_for
-          - action: scene.delete
-            target:
-              entity_id: scene.kinomodus_for
+              entity_id: *lys

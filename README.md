@@ -38,8 +38,9 @@ Hetzner CPX22 (Helsinki)
 
 ### Kinomodus (lys av når vi ser film) — Home Assistant
 - Ligger som HA-automasjon i `ha/kinomodus.yaml`, ikke i server.py
-- TV-en begynner å spille → vinduslys og lyset bak sofaen av (de som var på huskes)
-- Pause lar lyset være av; stoppet i 2 min → de samme lysene på igjen
+- TV-en begynner å spille → vinduslys og lyset bak sofaen av
+- Pause lar lyset være av
+- Filmen slås av → begge lysene på igjen (med en gang når TV-en slås av, etter 2 min hvis den bare står på menyen)
 
 ### PWA
 - Fungerer som app på iPhone (Legg til på hjemskjerm)
