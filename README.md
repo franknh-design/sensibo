@@ -36,6 +36,11 @@ Hetzner CPX22 (Helsinki)
 - Planlagte temperaturendringer per klokkeslett og ukedag
 - Lagres på serveren — gjelder alle enheter
 
+### Kinomodus (lys av når vi ser film) — Home Assistant
+- Ligger som HA-automasjon i `ha/kinomodus.yaml`, ikke i server.py
+- TV-en begynner å spille → vinduslys og lyset bak sofaen av (de som var på huskes)
+- Pause lar lyset være av; stoppet i 2 min → de samme lysene på igjen
+
 ### PWA
 - Fungerer som app på iPhone (Legg til på hjemskjerm)
 - Alle innstillinger synkronisert via server — ingen localStorage
