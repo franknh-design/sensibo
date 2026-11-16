@@ -1080,6 +1080,7 @@ def get_outdoor_rule():
 # weekend_start gjelder natt til lørdag og søndag (fredag/lørdag kveld).
 NIGHT_DEFAULT = {"enabled": True, "start": "23:00", "weekend_start": "00:30", "end": "09:00", "temp": 20.0, "preheat": True,
                  "cold_skip": False, "cold_skip_below": -5,   # ingen nattsenking når det er kaldere enn dette ute
+                 "low_skip": True, "low_skip_at": 22,          # ingen nattsenking når dagmålet er så lavt eller lavere
                  "morning_full": True,                         # full gass (30° + høy) fra natt til dag
                  "morning_full_below": 1.0}                    # …bare når stua er minst så mye under dagmålet
 COLD_SKIP_BAND = 1.0  # nattsenking tilbake først når det er 1 °C over grensen (hindrer flipping)
@@ -1240,6 +1241,17 @@ def outdoor_rule_check(force=False):
         cache["cold_skip_logged_for"] = night_end.isoformat()
         add_event("auto", f"Ute {out:.1f}°C — ingen nattsenking i natt (kaldere enn {night['cold_skip_below']:g}°C)")
     if skip:
+        is_night = False
+    # Lavt dagmål (f.eks. 22): da er det ingenting å senke — samme temp hele døgnet
+    day_now = (rule["warm_temp"] if bracket == "warm" else rule["cold_temp"]) if rule["enabled"] \
+              else (cache.get("day_target") or cache.get("auto_target_temp"))
+    low = bool(day_now is not None and ((night.get("low_skip", True) and day_now <= night.get("low_skip_at", 22))
+                                        or night["temp"] >= day_now))  # «nattsenking» opp er aldri meningen
+    cache["night_low_skip"] = low
+    if low and is_night:
+        if cache.get("low_skip_logged_for") != night_end.isoformat():
+            cache["low_skip_logged_for"] = night_end.isoformat()
+            add_event("auto", f"Dagmål {day_now:g}°C — ingen nattsenking i natt ({night.get('low_skip_at', 22):g}°C eller lavere)")
         is_night = False
     cache["preheat"] = None
     if not away and is_night and night.get("preheat", True):
@@ -1705,6 +1717,7 @@ class Handler(BaseHTTPRequestHandler):
                 "night": get_night(),
                 "preheat": cache.get("preheat"),
                 "night_cold_skip": bool(cache.get("night_cold_skip")),
+                "night_low_skip": bool(cache.get("night_low_skip")),
                 "stove": get_stove(),
                 "staged": get_staged(),
                 "staged_active": bool(cache.get("esc")),
@@ -1873,6 +1886,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "end": n["end"], "temp": max(16, min(28, round(float(n["temp"])))),
                                  "preheat": bool(n.get("preheat", True)),
                                  "cold_skip": bool(n.get("cold_skip", False)),
+                                 "low_skip": bool(n.get("low_skip", True)),
+                                 "low_skip_at": max(16, min(28, round(float(n.get("low_skip_at", 22))))),
                                  "morning_full": bool(n.get("morning_full", True)),
                                  "morning_full_below": max(0.0, min(3.0, round(float(n.get("morning_full_below", 1.0)) * 2) / 2)),
                                  "cold_skip_below": max(-30, min(10, round(float(n.get("cold_skip_below", -5)))))}

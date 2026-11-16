@@ -693,6 +693,21 @@ input[type=time]{color-scheme:dark}
             <button onclick="saveNight({cold_skip_below: S.night.cold_skip_below + 1})">+</button>
           </div>
         </div>
+        <div class="rule-row" style="margin-top:0">
+          <div>
+            <div style="color:var(--text);font-size:12px">Ingen nattsenking når dagmålet er lavt</div>
+            <div style="font-size:10px;color:var(--muted)">Holder dagtemperaturen hele natta når den er på grensen eller lavere</div>
+          </div>
+          <button class="rule-btn" id="lowSkipBtn" onclick="saveNight({low_skip: !(S.night && S.night.low_skip !== false)})">PÅ</button>
+        </div>
+        <div id="lowSkipRow">
+          <div class="field-label">…dagmål på eller under</div>
+          <div class="temp-picker">
+            <button onclick="saveNight({low_skip_at: (S.night.low_skip_at ?? 22) - 1})">−</button>
+            <div class="val" id="lowSkipAt">22°</div>
+            <button onclick="saveNight({low_skip_at: (S.night.low_skip_at ?? 22) + 1})">+</button>
+          </div>
+        </div>
         <div style="font-size:10px;color:var(--muted);line-height:1.6" id="nightExplain"></div>
         <div style="font-size:10px;color:var(--accent);line-height:1.6" id="preheatPlan"></div>
       </div>
@@ -1082,7 +1097,7 @@ function applyStatus(d) {
     if (d.staged && !S.stagedSaving) { S.staged = d.staged; S.stagedActive = d.staged_active; renderStaged(); }
     if (d.stove && !S.stoveSaving) { S.stove = d.stove; S.stoveActive = d.stove_active; renderStove(); }
     if (d.away && !S.awaySaving) { S.away = d.away; S.awayNow = d.away_now; S.targetMode = d.target_mode; renderAway(); renderHoldLearn(); }
-    if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; S.nightColdSkip = d.night_cold_skip; renderNight(); }
+    if (d.night && !S.nightSaving) { S.night = d.night; S.targetMode = d.target_mode; S.preheat = d.preheat; S.nightColdSkip = d.night_cold_skip; S.nightLowSkip = d.night_low_skip; renderNight(); }
     if (d.hold_offset != null) {
       const ho = document.getElementById("holdOffsetEl");
       if (ho) ho.textContent = (d.hold_offset >= 0 ? "+" : "") + d.hold_offset;
@@ -1306,6 +1321,7 @@ function renderNight() {
   document.getElementById("nightExplain").textContent = n.enabled
     ? `${n.temp}° fra ${n.start} (fredag og lørdag fra ${n.weekend_start}) til ${n.end}. Etterpå går ønsket temp tilbake til «Mål etter utetemperatur» av seg selv.` + (S.targetMode === "night" ? " Nattsenking pågår nå." : "")
       + (n.cold_skip ? ` Ikke når det er kaldere enn ${String(n.cold_skip_below).replace("-", "−")}° ute` + (S.nightColdSkip ? " — det er det nå, så nattsenkingen hoppes over." : ".") : "")
+      + (n.low_skip !== false ? ` Ikke når dagmålet er ${n.low_skip_at ?? 22}° eller lavere` + (S.nightLowSkip ? " — det er det nå, så natta går på dagmålet." : ".") : "")
     : "Av — samme mål hele døgnet.";
   const ph = n.preheat !== false;
   const pb = document.getElementById("preheatBtn");
@@ -1318,6 +1334,10 @@ function renderNight() {
   csb.textContent = cs ? "PÅ" : "AV"; csb.classList.toggle("on", cs);
   document.getElementById("coldSkipRow").style.display = cs ? "" : "none";
   document.getElementById("coldSkipBelow").textContent = String(n.cold_skip_below ?? -5).replace("-", "−") + "°";
+  const ls = n.low_skip !== false, lsb = document.getElementById("lowSkipBtn");
+  lsb.textContent = ls ? "PÅ" : "AV"; lsb.classList.toggle("on", ls);
+  document.getElementById("lowSkipRow").style.display = ls ? "" : "none";
+  document.getElementById("lowSkipAt").textContent = (n.low_skip_at ?? 22) + "°";
   const plan = S.preheat, pe = document.getElementById("preheatPlan");
   const hhmm = iso => new Date(iso).toLocaleTimeString("no-NO", {hour:"2-digit", minute:"2-digit"});
   pe.textContent = (n.enabled && ph && plan)
