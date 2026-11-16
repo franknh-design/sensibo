@@ -789,6 +789,15 @@ input[type=time]{color-scheme:dark}
           <div class="field-label">Filtrene sist rengjort</div>
           <input type="date" class="time-input" id="filterLastInput" onchange="setFilterLast(this.value)">
         </div>
+        <div>
+          <div class="field-label">Pause etter endring med fjernkontrollen</div>
+          <div class="temp-picker">
+            <button onclick="adjPauseHours(-1)">−</button>
+            <div class="val" id="pauseHoursVal">3 t</div>
+            <button onclick="adjPauseHours(1)">+</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Auto lar pumpa stå slik den ble satt. Hvert nytt trykk starter pausen på nytt. Satt til 16° eller av (verandadøra): auto fortsetter når den settes tilbake.</div>
+        </div>
         <div id="hystRow">
           <div class="field-label">Hysteresis — når oppvarming starter</div>
           <div class="temp-picker">
@@ -1097,6 +1106,8 @@ function applyStatus(d) {
     // Vis faktisk AC-temp i innstilt-kortet
     const acTemp = d.ac.targetTemperature;
     S.pausedUntil = d.auto_paused_until || null;
+    S.pauseHours = d.external_pause_hours || 3;
+    { const ph = document.getElementById("pauseHoursVal"); if (ph && !S.pauseSaving) ph.textContent = S.pauseHours + " t"; }
     S.autoPhase = (d.ac.on && d.ac.targetTemperature === 30 && d.ac.fanLevel === "high") ? "varmer" : "holder";
     S.acFan = d.ac.fanLevel; S.acTemp = d.ac.targetTemperature;
     if (d.outdoor_rule && !S.outdoorRuleDirty) { S.outdoorRule = d.outdoor_rule; renderOutdoorRule(); }
@@ -1396,7 +1407,7 @@ function updateAutoToggleUI() {
   } else if (S.autoEnabled && S.pausedUntil) {
     const til = new Date(S.pausedUntil*1000).toLocaleTimeString("no-NO",{hour:"2-digit",minute:"2-digit"});
     title.textContent = "⏸ Auto pauset";
-    sub.textContent = `Endret utenfor appen · fortsetter senest ${til}`;
+    sub.textContent = `Endret med fjernkontrollen e.l. · auto tilbake kl. ${til}`;
   } else if (S.autoEnabled) {
     title.textContent = S.autoPhase==="varmer"?"⚡ Varmer opp":"✓ Holder temperatur";
     const fanTxt = (FAN_LABELS[S.acFan] || S.acFan || "—").toLowerCase();
@@ -2054,6 +2065,19 @@ function setNormalFan(btn, speed) {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({normal_fan: speed})
   }).then(()=>showToast("Normalinnstilling lagret ✓","ok")).catch(()=>showToast("Kunne ikke lagre","err"));
+}
+
+let _pauseSave = null;
+function adjPauseHours(d) {
+  S.pauseHours = Math.max(1, Math.min(12, (S.pauseHours || 3) + d));
+  document.getElementById("pauseHoursVal").textContent = S.pauseHours + " t";
+  S.pauseSaving = true;
+  clearTimeout(_pauseSave);
+  _pauseSave = setTimeout(() => {
+    fetch(`${API}/api/settings`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({external_pause_hours: S.pauseHours})})
+      .then(r => r.json()).then(d => { S.pauseSaving = false; showToast(d.ok ? "Lagret ✓" : "Kunne ikke lagre", d.ok ? "ok" : "err"); })
+      .catch(() => { S.pauseSaving = false; showToast("Kunne ikke lagre","err"); });
+  }, 600);
 }
 
 function adjSetting(key, delta) {

@@ -252,7 +252,10 @@ def get_device_uid():
 
 AC_KEYS = ("on", "mode", "targetTemperature", "fanLevel")
 
-EXTERNAL_PAUSE_HOURS = 3
+EXTERNAL_PAUSE_HOURS = 3   # standard; kan stilles per hus (external_pause_hours)
+
+def pause_hours():
+    return cache.get("external_pause_hours") or EXTERNAL_PAUSE_HOURS
 MIN_HOLD_OFF_TEMP = 16  # HA sin «verandadør åpen»-verdi
 
 def resume_from_pause(why):
@@ -279,12 +282,15 @@ def detect_external_change(ac):
         change = describe_change(prev, seen) or f"pumpe → {describe_ac(seen)}"
         add_event("external", f"Endret utenfor appen: {change}", **seen)
         if cache.get("auto_enabled"):
-            cache["external_pause_until"] = time.time() + EXTERNAL_PAUSE_HOURS * 3600
+            cache["external_pause_until"] = time.time() + pause_hours() * 3600
+            cache["external_pause_hold_off"] = True
             cache.pop("auto_heat_start", None)
-            add_event("auto", f"Auto pauset (pumpa satt til minimum/av utenfor appen) — fortsetter når den endres igjen, senest om {EXTERNAL_PAUSE_HOURS} t")
+            add_event("auto", f"Auto pauset (pumpa satt til minimum/av utenfor appen) — fortsetter når den endres igjen, senest om {pause_hours():g} t")
         return
-    if cache.get("external_pause_until"):
+    if cache.get("external_pause_until") and cache.get("external_pause_hold_off"):
+        # Fra 16 °C/av og tilbake (HA når verandadøra lukkes): auto fortsetter med en gang
         cache["external_pause_until"] = None
+        cache["external_pause_hold_off"] = False
         cache["last_command"] = None
         change = describe_change(prev, seen) or f"pumpe → {describe_ac(seen)}"
         add_event("external", f"Endret utenfor appen: {change}", **seen)
@@ -298,9 +304,13 @@ def detect_external_change(ac):
     # Ellers ville duplikatsperren i sensibo_patch hindre oss i å sette tilbake samme verdi
     cache["last_command"] = None
     if cache.get("auto_enabled"):
-        cache["external_pause_until"] = time.time() + EXTERNAL_PAUSE_HOURS * 3600
+        # Hvert trykk på fjernkontrollen starter pausen på nytt — gjesten som trykker 23→24→25 får beholde 25
+        again = bool(cache.get("external_pause_until"))
+        cache["external_pause_until"] = time.time() + pause_hours() * 3600
+        cache["external_pause_hold_off"] = False
         cache.pop("auto_heat_start", None)
-        add_event("auto", f"Auto pauset (endret utenfor appen) — fortsetter når pumpa endres igjen, senest om {EXTERNAL_PAUSE_HOURS} t")
+        until = datetime.fromtimestamp(cache["external_pause_until"], LOCAL_TZ).strftime("%H:%M")
+        add_event("auto", f"Auto {'pause forlenget' if again else 'pauset'} (endret utenfor appen) — fortsetter kl. {until}")
 
 ALLOWED_MODES = ("heat", "fan")  # kjøling er aldri tillatt — heller ikke «auto»/«dry», som kan kjøle
 
@@ -724,7 +734,8 @@ def auto_feedback_check():
         if time.time() < pause:
             return
         cache["external_pause_until"] = None
-        add_event("auto", f"Auto fortsetter etter {EXTERNAL_PAUSE_HOURS} t pause")
+        cache["external_pause_hold_off"] = False
+        add_event("auto", "Auto fortsetter etter pause (endret utenfor appen)")
     current = cache.get("temperature")
     if current is None:
         return
@@ -1523,7 +1534,7 @@ STATE_KEYS = [
     "auto_enabled", "auto_target_temp", "hysteresis", "normal_fan", "boost_temp", "schedules",
     "last_schedule_key", "hold_offset", "outdoor_rule", "outdoor_bracket",
     "night", "target_mode", "day_target", "preheat_for", "away",
-    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_learn_away", "hold_fan", "esc", "full_heat", "hl_applied_at", "hl_applied_bucket", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
+    "stove", "stove_active", "stove_saved_offset", "staged", "hold_floor", "hold_floor_at", "hold_adjusted_at", "hl_in_band_at", "hl_in_band_target", "hold_learn", "hold_learn_away", "external_pause_hours", "external_pause_hold_off", "external_pause_until", "hold_fan", "esc", "full_heat", "hl_applied_at", "hl_applied_bucket", "morning_full", "full_heat_ended_at", "filter", "filter_push_day"
 ]
 
 def save_state():
@@ -1737,6 +1748,7 @@ class Handler(BaseHTTPRequestHandler):
                 "schedules": cache.get("schedules", []),
                 "boost_active": cache.get("boost_active", False),
                 "auto_paused_until": cache.get("external_pause_until"),
+                "external_pause_hours": pause_hours(),
                 "hold_offset": cache.get("hold_offset", 1),
                 "outdoor_rule": get_outdoor_rule(),
                 "night": get_night(),
@@ -1935,6 +1947,11 @@ class Handler(BaseHTTPRequestHandler):
                         make_standard(new_t)
                 cache["auto_target_temp"] = new_t
                 log.info(f"Ønsket temp satt til {cache['auto_target_temp']}°C")
+            if "external_pause_hours" in body:
+                h = max(1, min(12, int(body["external_pause_hours"])))
+                if h != pause_hours():
+                    cache["external_pause_hours"] = h
+                    add_event("setting", f"Pause etter endring med fjernkontroll: {h} t")
             if "hysteresis" in body:
                 cache["hysteresis"] = max(0.5, min(3.0, float(body["hysteresis"])))
                 log.info(f"Nedre hysteresis: {cache['hysteresis']}°C")
