@@ -652,7 +652,8 @@ def min_off():
     if not st["enabled"] or cache.get("target_mode") in ("night", "away"):
         return HOLD_OFFSET_MIN
     out = cache.get("outdoor_temp")
-    if out is not None and out > st.get("min_offset_below", -5):
+    if out is None or out > st.get("min_offset_below", -5):
+        # Ukjent utetemp (rett etter omstart): ikke tving holdet opp — ga 18→21 ved hver omstart (Vigdis 16.11)
         return HOLD_OFFSET_MIN
     return max(HOLD_OFFSET_MIN, int(st.get("min_offset", 0)))
 
