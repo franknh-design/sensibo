@@ -615,7 +615,11 @@ HEAT_STOP_BELOW = 0.3            # oppvarming (30 °C) stopper ved mål−0,3
 # ── Trinnvis oppvarming: varmere luft først, høy vifte bare som siste utvei ──
 STAGED_DEFAULT = {"enabled": False, "step": 2, "every_min": 30, "full_below": 2.0, "fan": "medium_high",
                   "min_offset": 0,   # pumpa aldri lavere enn ønsket + dette (23 ved ønsket 23 holder ofte ikke)
-                  "min_offset_below": -5}  # …men bare når det er så kaldt ute (mildt: 24 holdt stua på 24)
+                  "min_offset_below": -5,  # …men bare når det er så kaldt ute (mildt: 24 holdt stua på 24)
+                  "nudge": False}  # finjuster: stille +1 når rommet sakte sniker seg under, trinn først ved −0,5
+NUDGE_BELOW = 0.2          # finjuster: rommet (snitt) så mye under ønsket og ikke på vei opp → +1
+NUDGE_EVERY = 30 * 60      # …høyst én gang per halvtime
+NUDGE_STAGED_BELOW = 0.5   # med finjustering starter trinnene først så langt under (eller ved raskt fall)
 STAGED_START_BELOW = 0.3   # start trinn når rommet er så mye under ønsket
 STAGED_DONE_BELOW = 0.1    # ferdig når rommet er innen 0,1 °C av ønsket
 STAGED_RISING = 0.2        # har rommet steget så mye siden forrige trinn, venter vi (det virker)
@@ -798,9 +802,21 @@ def auto_feedback_check():
         adjust_every = 15 * 60  # D: over målet og stiger fort — vent ikke en time
     if staged["enabled"] and current > target + HOLD_HIGH and rate is not None and rate >= D_RISING:
         adjust_every = 10 * 60  # over målet og stiger fortsatt: ett pip ekstra er bedre enn 1° for varmt
+    nudge_calm = staged.get("nudge") and not too_warm and not rising_fast
+    if nudge_calm:
+        adjust_every = max(adjust_every, NUDGE_EVERY)  # finjustering: ett hakk av gangen begge veier, ikke 10-min-ping-pong
     if offset < min_off():
         cache["hold_offset"] = offset = min_off()  # aldri under «ønsket + X»
-    if not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
+    avg = room_avg()
+    if (staged.get("nudge") and not heating and avg is not None and avg < target - NUDGE_BELOW
+            and (rate is None or rate < 0.1) and offset < int(29 - target)
+            and now - cache.get("hold_adjusted_at", 0) >= NUDGE_EVERY):
+        # Finjuster: rommet sniker seg under — ett hakk opp i stillhet, ikke trinn 21→24→21
+        cache["hold_offset"] = offset = offset + 1
+        cache["hold_adjusted_at"] = now
+        add_event("auto", f"Finjusterer: rommet {avg:.1f}°C sniker seg under {target:g}°C — pumpa ett hakk opp til {int(round(target + offset))}°C")
+        save_state()
+    elif not heating and now - cache.get("hold_adjusted_at", 0) >= adjust_every:
         new = offset
         if current < target - HOLD_LOW and not staged["enabled"]:
             new = min(HOLD_OFFSET_MAX, offset + 1)
@@ -906,7 +922,10 @@ def hold_learning(current, target, offset, heating, fan):
             cache["hl_stable_since"], cache["hl_stable_offset"] = now, (offset, fan)
             cache["hl_stable_room"] = current
         elif now - cache["hl_stable_since"] >= HL_STABLE_SECONDS:
-            if abs(current - cache.get("hl_stable_room", current)) <= HL_STABLE_DRIFT:
+            drift = current - cache.get("hl_stable_room", current)
+            # Med finjustering: et sakte fall (−0,1/t og mer) er ikke «holdt» — det lærte for lavt hold
+            ok = (-0.15 < drift <= HL_STABLE_DRIFT) if get_staged().get("nudge") else abs(drift) <= HL_STABLE_DRIFT
+            if ok:
                 hl_record(out, offset, "stable", fan)
             cache["hl_stable_since"], cache["hl_stable_room"] = now, current
     else:
@@ -985,6 +1004,10 @@ def staged_check(uid, current, target, st, ac, normal_fan):
                     base = int(round(pred[0])) if pred else int(cache.get("hold_offset", 0))
                     # Ett hakk over lært hold når vi er like under målet — ellers sank rommet og trinnene startet igjen
                     hold_t = max(int(round(target)) + min_off(), min(set_t - 1, int(round(target + base)) + (1 if current < target else 0)))
+                if st.get("nudge") and esc.get("start_t") is not None:
+                    # Holdet før trinnene var for lavt (det var derfor de startet) — tilbake dit ga
+                    # sagtann 21→24→21 hvert 40. min (Frank 16.11). Ett hakk over i stedet.
+                    hold_t = max(hold_t, min(set_t - 1, int(esc["start_t"]) + 1))
                 if hold_fan == "high":
                     hold_fan = st["fan"]
                 add_event("auto", (f"Bremser: rommet stiger {rate:.1f}°C/t" if rate is not None and rate >= D_RISE
@@ -1025,7 +1048,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
     else:
         # Snitt, ikke én måling: 22,8 i ett øyeblikk ved mål 23 startet trinn (støy)
         falling_fast = rate is not None and rate <= D_FALL and avg < target - 0.2
-        if avg >= target - STAGED_START_BELOW and not falling_fast:
+        start_below = NUDGE_STAGED_BELOW if st.get("nudge") else STAGED_START_BELOW
+        if avg >= target - start_below and not falling_fast:
             return False  # nær målet (også ved overgang fra full trøkk): holdet tar over
         if (not handover and not falling_fast and now - cache.get("full_heat_ended_at", 0) < AFTER_FULL_GRACE
                 and current >= target - 1.0):
@@ -1050,7 +1074,8 @@ def staged_check(uid, current, target, st, ac, normal_fan):
         real_fail = (ac.get("on") and set_t < 30 and cache.get("hl_in_band_target") == target
                      and now - cache.get("hl_in_band_at", 0) < HL_STABLE_SECONDS)
         esc = {"start": now, "last_step": now, "room_at_step": current,
-               "fail_offset": int(set_t - target) if real_fail else None}  # vurderes når trinnene er ferdige
+               "fail_offset": int(set_t - target) if real_fail else None,  # vurderes når trinnene er ferdige
+               "start_t": int(set_t) if set_t < 30 else None}  # holdet som ikke holdt
         cache["esc"] = esc
         cache["auto_heat_start"] = {"temp": current, "time": now, "outdoor": cache.get("outdoor_temp")}
 
@@ -1858,7 +1883,8 @@ class Handler(BaseHTTPRequestHandler):
                           "full_below": max(0.5, min(5.0, round(float(st["full_below"]) * 2) / 2)),
                           "fan": st["fan"] if st["fan"] in ("quiet", "low", "medium", "medium_high") else "medium_high",
                           "min_offset": max(-3, min(4, int(st.get("min_offset", 0)))),
-                          "min_offset_below": max(-25, min(15, int(st.get("min_offset_below", -5))))}
+                          "min_offset_below": max(-25, min(15, int(st.get("min_offset_below", -5)))),
+                          "nudge": bool(st.get("nudge", False))}
                 if new_st != get_staged():
                     cache["staged"] = new_st
                     if not new_st["enabled"]:

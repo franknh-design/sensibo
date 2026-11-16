@@ -583,6 +583,13 @@ input[type=time]{color-scheme:dark}
             <button onclick="saveStaged({every_min: S.staged.every_min + 5})">+</button>
           </div>
         </div>
+        <div class="rule-row" style="margin-top:0">
+          <div>
+            <div style="color:var(--text);font-size:12px">Finjuster med ett hakk</div>
+            <div style="font-size:10px;color:var(--muted)">Sniker rommet seg 0,2° under: pumpa ett hakk opp i stillhet (høyst hver halvtime). Trinn først ved 0,5° under.</div>
+          </div>
+          <button class="rule-btn" id="nudgeBtn" onclick="saveStaged({nudge: !(S.staged && S.staged.nudge)})">AV</button>
+        </div>
         <div>
           <div class="field-label">Pumpa aldri lavere enn ønsket temp (dagtid, når kaldt ute)</div>
           <div class="temp-picker">
@@ -1252,13 +1259,15 @@ function renderStaged() {
   document.getElementById("stagedStep").textContent = st.step + "°";
   document.getElementById("stagedEvery").textContent = st.every_min + " min";
   document.getElementById("stagedFull").textContent = String(st.full_below).replace(".", ",") + "°";
+  const nb = document.getElementById("nudgeBtn");
+  nb.textContent = st.nudge ? "PÅ" : "AV"; nb.classList.toggle("on", !!st.nudge);
   const mo = st.min_offset ?? 0;
   document.getElementById("stagedMinOff").textContent = (mo >= 0 ? "+" : "−") + Math.abs(mo) + "°";
   const mb = st.min_offset_below ?? -5;
   document.getElementById("stagedMinOffBelow").textContent = (mb < 0 ? "−" : "") + Math.abs(mb) + "°";
   document.getElementById("stagedExplain").textContent = st.enabled
     ? (S.stagedActive ? "⏫ Trinnvis oppvarming pågår nå. " : "")
-      + `Når rommet faller 0,3° under ønsket: innstilt temp +${st.step}° med ${FAN_NO_UI[st.fan] || st.fan} vifte. Har rommet ikke steget etter ${st.every_min} min: +${st.step}° til, opp til 30°. Først da høy vifte. Er rommet ${String(st.full_below).replace(".", ",")}° eller mer under ønsket, går den rett på 30° + høy vifte.`
+      + `Når rommet faller ${st.nudge ? "0,5" : "0,3"}° under ønsket: innstilt temp +${st.step}° med ${FAN_NO_UI[st.fan] || st.fan} vifte. Har rommet ikke steget etter ${st.every_min} min: +${st.step}° til, opp til 30°. Først da høy vifte. Er rommet ${String(st.full_below).replace(".", ",")}° eller mer under ønsket, går den rett på 30° + høy vifte.`
     : "Av — pumpa går rett på 30° + høy vifte når rommet faller under ønsket med hysteresen (under Varmepumpe).";
 }
 
